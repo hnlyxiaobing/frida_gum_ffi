@@ -1,0 +1,132 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "hnlyxiaobing/frida_gum_ffi"
+
+import {
+  "moonbitlang/core/debug",
+}
+
+// Values
+pub fn mb_gum_attach(GumInterceptorRaw, Bytes) -> UInt64
+
+pub fn mb_gum_deinit_embedded(GumRuntimeRaw) -> Unit
+
+pub fn mb_gum_detach(GumInterceptorRaw, UInt64) -> Int32
+
+pub fn mb_gum_enumerate_modules() -> GumModuleRaw
+
+pub fn mb_gum_init_embedded() -> GumRuntimeRaw
+
+pub fn mb_gum_interceptor_obtain(GumRuntimeRaw) -> GumInterceptorRaw
+
+pub fn mb_gum_memory_read(UInt64, FixedArray[Byte], Int32) -> Int32
+
+pub fn mb_gum_memory_write(UInt64, Bytes, Int32) -> Int32
+
+pub fn mb_gum_module_at(GumModuleRaw, Int32, FixedArray[Byte], Int32) -> Int32
+
+pub fn mb_gum_modules_free(GumModuleRaw) -> Unit
+
+pub fn mb_gum_set_callbacks(GumRuntimeRaw, UInt64, FuncRef[(() -> Unit) -> Unit], () -> Unit) -> Int32
+
+pub fn mb_gum_transaction(GumInterceptorRaw, Int32) -> Int32
+
+// Errors
+#derive(@debug.Debug)
+pub suberror GumError {
+  NotInitialized
+  AlreadyInitialized
+  DevkitNotFound(String)
+  AttachFailed(Int32, String)
+  DetachFailed(Int32, String)
+  UnknownSymbol(String)
+  InvalidAddress(UInt64)
+  MemoryReadFailed(UInt64, Int32)
+  MemoryWriteFailed(UInt64, Int32)
+  ModuleEnumerateFailed(Int32)
+  CallbackBridgeFailed(String)
+  PtraceDenied(String)
+  LicenseReviewRequired(String)
+}
+pub fn GumError::to_repr(Self) -> @debug.Repr
+
+// Types and methods
+pub(all) struct Gum {
+  runtime : GumRuntimeRaw
+  interceptor : GumInterceptorRaw
+  state : GumState
+  hook_count : Int32
+}
+pub fn Gum::attach(Self, Bytes, (InvocationContext) -> Unit, (InvocationContext) -> Unit) -> UInt64 raise GumError
+pub fn Gum::close(Self) -> Unit raise GumError
+pub fn Gum::detach(Self, UInt64) -> Unit raise GumError
+pub fn Gum::init() -> Self raise GumError
+pub fn Gum::memory_read(Self, UInt64, Int32) -> Bytes raise GumError
+pub fn Gum::memory_write(Self, UInt64, Bytes) -> Unit raise GumError
+pub fn Gum::modules(Self) -> Array[ModuleInfo] raise GumError
+pub fn Gum::regions(Self) -> Array[MemoryRegion] raise GumError
+
+#external
+pub type GumInterceptorRaw
+
+#external
+pub type GumListenerRaw
+
+#external
+pub type GumModuleRaw
+
+#external
+pub type GumRuntimeRaw
+
+pub(all) enum GumState {
+  Uninitialized
+  Initialized
+  Attached
+  Closed
+}
+
+pub(all) struct InvocationContext {
+  hook_id : UInt64
+  point_cut : PointCut
+  thread_id : UInt64
+  depth : Int32
+  function_address : UInt64
+  args : Array[UInt64]
+  return_value : UInt64?
+}
+
+pub(all) struct MemoryProtection {
+  read : Bool
+  write : Bool
+  execute : Bool
+}
+
+pub(all) struct MemoryRegion {
+  base : UInt64
+  end : UInt64
+  protection : MemoryProtection
+  path : String
+}
+
+pub(all) struct ModuleInfo {
+  name : String
+  path : String
+  base : UInt64
+  size : UInt64
+}
+
+pub(all) enum PointCut {
+  Enter
+  Leave
+}
+
+// Type aliases
+pub type Address = UInt64
+
+pub type HookId = UInt64
+
+// Traits
+pub trait InstrumentationBackend {
+  fn attach(Self, UInt64) -> UInt64 raise GumError
+  fn detach(Self, UInt64) -> Unit raise GumError
+  fn read(Self, UInt64, Int32) -> Bytes raise GumError
+}
