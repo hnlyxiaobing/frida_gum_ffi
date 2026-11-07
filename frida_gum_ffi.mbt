@@ -86,12 +86,11 @@ pub(all) struct InvocationContext {
 }
 
 ///|
-/// 运行时状态机。
+/// 运行时状态机（R2 默认决策 5 收紧：仅保留实际代码路径使用到的分支）。
+/// 实现只在 `Gum::init` 成功时置为 `Initialized`，其余状态从未被构造或匹配，
+/// 故 `Uninitialized` / `Attached` / `Closed` 三个死分支已删除（不补齐状态机）。
 pub(all) enum GumState {
-  Uninitialized
   Initialized
-  Attached
-  Closed
 }
 
 ///|
@@ -134,27 +133,31 @@ pub trait InstrumentationBackend {
 }
 
 ///|
-/// ---- 外部 C shim 声明 ----
+/// ---- 外部 C shim 声明（包私有 · 私有实现 ABI，非公共 API）----
 /// 符号由项目自带的桌面 stub `stub/mb_gum_stub.c` 提供，一对一模拟 gum C API 语义。
 /// 链接真实 frida-gum devkit 受 ADR-0006 许可门禁（G1 许可审查 + G2 更小替代评估）约束，本轮不做。
+///
+/// 可见性（R2 默认决策 6）：本节 12 个 `mb_gum_*` 已由 `pub` 收敛为包私有，
+/// 仅供 `gum.mbt` / 包内白盒测试调用，**不出现在 `moon info` 快照（pkg.generated.mbti）中**。
+/// 对外唯一入口是 `gum.mbt` 的 `Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}`。
 
 ///|
 /// 初始化嵌入式 gum 运行时（`gum_init_embedded`）。进程级，必须且只能调用一次。
-pub extern "C" fn mb_gum_init_embedded() -> GumRuntimeRaw = "mb_gum_init_embedded"
+extern "C" fn mb_gum_init_embedded() -> GumRuntimeRaw = "mb_gum_init_embedded"
 
 ///|
 /// 反初始化（`gum_deinit_embedded`）；调用后所有句柄失效。
-pub extern "C" fn mb_gum_deinit_embedded(runtime : GumRuntimeRaw) -> Unit = "mb_gum_deinit_embedded"
+extern "C" fn mb_gum_deinit_embedded(runtime : GumRuntimeRaw) -> Unit = "mb_gum_deinit_embedded"
 
 ///|
 /// 获取进程内唯一 Interceptor（借用语义，不释放）。
-pub extern "C" fn mb_gum_interceptor_obtain(
+extern "C" fn mb_gum_interceptor_obtain(
   runtime : GumRuntimeRaw,
 ) -> GumInterceptorRaw = "mb_gum_interceptor_obtain"
 
 ///|
 /// 批量挂 hook 的事务边界：`begin=1` 开启，`begin=0` 提交并激活。
-pub extern "C" fn mb_gum_transaction(
+extern "C" fn mb_gum_transaction(
   interceptor : GumInterceptorRaw,
   begin : Int32,
 ) -> Int32 = "mb_gum_transaction"
@@ -162,14 +165,14 @@ pub extern "C" fn mb_gum_transaction(
 ///|
 /// 按符号名挂 hook；`symbol` 为 `#borrow`，C 侧只读取。返回 hook id（0 表示失败）。
 #borrow(symbol)
-pub extern "C" fn mb_gum_attach(
+extern "C" fn mb_gum_attach(
   interceptor : GumInterceptorRaw,
   symbol : Bytes,
 ) -> UInt64 = "mb_gum_attach"
 
 ///|
 /// 摘除 hook 并释放对应 listener 句柄。
-pub extern "C" fn mb_gum_detach(
+extern "C" fn mb_gum_detach(
   interceptor : GumInterceptorRaw,
   hook_id : UInt64,
 ) -> Int32 = "mb_gum_detach"
@@ -179,7 +182,7 @@ pub extern "C" fn mb_gum_detach(
 /// detach 时须由 shim `moonbit_decref`。`cb` 为无捕获 `FuncRef`，
 /// 真正的回调状态（JNI attach / global ref）保存在 C 侧 listener 中。
 #owned(closure)
-pub extern "C" fn mb_gum_set_callbacks(
+extern "C" fn mb_gum_set_callbacks(
   interceptor : GumRuntimeRaw,
   hook_id : UInt64,
   cb : FuncRef[(() -> Unit) -> Unit],
@@ -189,7 +192,7 @@ pub extern "C" fn mb_gum_set_callbacks(
 ///|
 /// 读进程内存；`dst` 由 C 侧填充，`#borrow` 表示 MoonBit 保留所有权。
 #borrow(dst)
-pub extern "C" fn mb_gum_memory_read(
+extern "C" fn mb_gum_memory_read(
   address : Address,
   dst : FixedArray[Byte],
   length : Int32,
@@ -198,7 +201,7 @@ pub extern "C" fn mb_gum_memory_read(
 ///|
 /// 写进程内存；`src` 为 `#borrow`，C 侧只读取。
 #borrow(src)
-pub extern "C" fn mb_gum_memory_write(
+extern "C" fn mb_gum_memory_write(
   address : Address,
   src : Bytes,
   length : Int32,
@@ -206,12 +209,12 @@ pub extern "C" fn mb_gum_memory_write(
 
 ///|
 /// 枚举已加载模块，返回 C 侧数组句柄（借用；由 `mb_gum_modules_free` 释放）。
-pub extern "C" fn mb_gum_enumerate_modules() -> GumModuleRaw = "mb_gum_enumerate_modules"
+extern "C" fn mb_gum_enumerate_modules() -> GumModuleRaw = "mb_gum_enumerate_modules"
 
 ///|
 /// 读取模块数组的第 `index` 项到调用方缓冲；返回 1 表示有效，0 表示结束。
 #borrow(dst)
-pub extern "C" fn mb_gum_module_at(
+extern "C" fn mb_gum_module_at(
   modules : GumModuleRaw,
   index : Int32,
   dst : FixedArray[Byte],
@@ -220,7 +223,7 @@ pub extern "C" fn mb_gum_module_at(
 
 ///|
 /// 释放模块枚举结果（唯一释放点）。
-pub extern "C" fn mb_gum_modules_free(modules : GumModuleRaw) -> Unit = "mb_gum_modules_free"
+extern "C" fn mb_gum_modules_free(modules : GumModuleRaw) -> Unit = "mb_gum_modules_free"
 
 ///|
 /// ---- MoonBit 侧公开 API ----

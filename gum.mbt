@@ -67,8 +67,8 @@ pub fn Gum::init() -> Gum raise GumError {
 }
 
 ///|
-/// 关闭运行时并释放全部句柄（含未 detach 的 listener 与 `#owned` 闭包；
-/// 重复调用 / 未初始化时返回 `NotInitialized`）。
+/// 关闭运行时并释放全部句柄（含未 detach 的 listener 与 `#owned` 闭包）。
+/// **不会二次释放，重复调用返回明确错误**（重复 close / 未初始化 → `NotInitialized`）。
 pub fn Gum::close(self : Gum) -> Unit raise GumError {
   // 探针事务确认运行时存活并配平事务，再整体释放。
   let st = mb_gum_transaction(self.interceptor, 1)
@@ -144,6 +144,7 @@ pub fn Gum::attach(
 
 ///|
 /// 摘除 hook 并释放回调闭包（listener 与 `#owned` 闭包成对释放）。
+/// **不会二次释放，重复调用返回明确错误**（重复 detach → `DetachFailed`；运行时已关闭 → `NotInitialized`）。
 pub fn Gum::detach(self : Gum, hook_id : HookId) -> Unit raise GumError {
   let st = mb_gum_detach(self.interceptor, hook_id)
   if st != 0 {

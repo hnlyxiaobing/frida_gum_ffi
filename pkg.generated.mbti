@@ -6,29 +6,6 @@ import {
 }
 
 // Values
-pub fn mb_gum_attach(GumInterceptorRaw, Bytes) -> UInt64
-
-pub fn mb_gum_deinit_embedded(GumRuntimeRaw) -> Unit
-
-pub fn mb_gum_detach(GumInterceptorRaw, UInt64) -> Int32
-
-pub fn mb_gum_enumerate_modules() -> GumModuleRaw
-
-pub fn mb_gum_init_embedded() -> GumRuntimeRaw
-
-pub fn mb_gum_interceptor_obtain(GumRuntimeRaw) -> GumInterceptorRaw
-
-pub fn mb_gum_memory_read(UInt64, FixedArray[Byte], Int32) -> Int32
-
-pub fn mb_gum_memory_write(UInt64, Bytes, Int32) -> Int32
-
-pub fn mb_gum_module_at(GumModuleRaw, Int32, FixedArray[Byte], Int32) -> Int32
-
-pub fn mb_gum_modules_free(GumModuleRaw) -> Unit
-
-pub fn mb_gum_set_callbacks(GumRuntimeRaw, UInt64, FuncRef[(() -> Unit) -> Unit], () -> Unit) -> Int32
-
-pub fn mb_gum_transaction(GumInterceptorRaw, Int32) -> Int32
 
 // Errors
 #derive(@debug.Debug)
@@ -78,10 +55,7 @@ pub type GumModuleRaw
 pub type GumRuntimeRaw
 
 pub(all) enum GumState {
-  Uninitialized
   Initialized
-  Attached
-  Closed
 }
 
 pub(all) struct InvocationContext {

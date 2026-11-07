@@ -2,9 +2,9 @@
 
 **frida-gum 插桩核心的 C-FFI 封装 —— 为 MoonBit 程序提供函数 hook、内存读写与模块枚举能力。**
 
-> 状态：**Round-1 架构与声明可评审**。已写入 `#external` 句柄、`extern "C"` shim 签名、回调与所有权、值类型及 `declare` 包装 API，`moon check` 0 error（8 条预期 `0068` 告警）。**无 hook 逻辑、无 shim 实现**。
+> 状态（R2 冻结前 P0 整改 / 2026-11-07）：**桌面 stub 实现已落地**（`stub/mb_gum_stub.c` 模拟 interceptor 表 / 内存区 / 模块与区间表），`Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}` 8 个 API 均已实现，`moon test` **4/4 全过**（1 黑盒 + 3 白盒），`moon clean` / `moon check --deny-warn` / `moon build` / `moon test` / `moon fmt --check` 五项门禁全绿。12 个 `mb_gum_*` C shim 已由 `pub` 收敛为**包私有**（私有实现 ABI，非公共 API，不再出现在 `moon info` 快照）。
 > `preferred_target` 本轮由 `wasm` 改为 `native`（唯一配置改动，理由见 ADR-0007）。
-> **实现门禁（ADR-0006）**：本库本轮只写声明，**不进入第一轮实现候选**；需先通过「许可审查 + 更小替代方案评估」两道门禁。
+> **实现门禁（ADR-0006）**：**真实 frida-gum devkit 链接仍不进入实现候选**，须先通过「G1 许可审查 + G2 更小替代方案评估」两道门禁（本轮保持开放，表述不变）；本轮只链接自带桌面 stub，不下载/引入任何 devkit。
 
 ## 定位与为什么存在
 
@@ -24,12 +24,14 @@
 
 ## 公开接口（速览）
 
-`Gum::{init, close, attach, detach, memory_read, memory_write, modules, regions}`。外部句柄与 shim 清单见 `API.md`。
+`Gum::{init, close, attach, detach, memory_read, memory_write, modules, regions}`（均已实现，桌面 stub）。外部句柄清单见 `API.md`；12 个 `mb_gum_*` C shim 为**包私有的私有实现 ABI，非公共 API**，只能经 `Gum::*` 使用。
+
+生命周期统一措辞：**`Gum::close` / `Gum::detach` 不会二次释放，重复调用返回明确错误**（重复 close → `NotInitialized`；重复 detach → `DetachFailed`，运行时已关闭 → `NotInitialized`）。
 
 ## 依赖
 
-- **本轮零依赖、零 shim 实现**；独立 `moon.mod`，`moon check` 独立通过。
-- 后续轮（门禁通过后）：Frida releases 的 `libfrida-gum.a` devkit（16.x arm64 约 9–16 MB）、`native-stub` C 文件、GObject `GumInvocationListener` vtable 胶水。
+- **本轮依赖**：零第三方依赖；只链接自带 `stub/mb_gum_stub.c` 桌面 stub，**不下载、不链接 frida-gum devkit**。独立 `moon.mod`，五项门禁独立通过。
+- 后续轮（G1/G2 门禁通过后）：Frida releases 的 `libfrida-gum.a` devkit（16.x arm64 约 9–16 MB）、GObject `GumInvocationListener` vtable 胶水。
 
 ## 平台与许可风险
 
@@ -44,18 +46,19 @@
 
 ## 测试与验收
 
-- **测试策略**：x86-64 Linux hook 一个 libc 函数并打印参数；回调重入与 `begin/end_transaction` 事务测试；detach 后无悬挂；Android arm64 hook native 入口；许可清单核对。
-- **验收标准**（实现轮，门禁通过后）：hook 生效且 detach 无悬挂；许可审查通过；回调线程安全实测通过。
-- **本轮阻塞（预期）**：`moon build` / `moon test` 会在链接期失败（`mb_gum_*` shim 未实现）。
+- **测试策略**：本轮为桌面 stub 全链路（init → attach → memory 读写回环 → modules/regions → detach → close）、回调重入与事务配平、闭包引用计数成对、缓冲容量校验、许可/ptrace 门禁可观察路径；G1/G2 通过后的实现轮再做 x86-64 Linux hook libc、Android arm64 入口 hook 与许可清单核对。
+- **验收标准**（真实实现轮，门禁通过后）：hook 生效且 detach 无悬挂；许可审查通过；回调线程安全实测通过。
+- **本轮门禁（R2 实跑）**：`moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check` 全部 exit 0；`moon test` 输出 `Total tests: 4, passed: 4, failed: 0`（与 R1 基线持平）。
 
 ## 当前状态 / 本轮产物
 
 | 项 | 状态 |
 |---|---|
-| `frida_gum_ffi.mbt`：`#external` 句柄 ×4、`extern "C"` shim ×14、`declare` API ×8 | ✅ |
-| `pkg.generated.mbti` API 快照 | ✅ |
-| devkit 链接 / GObject 胶水 / 事务与重入保护 / 许可审查 | ❌ 后续轮（且设门禁） |
-| `moon check` | ✅ 0 error（8 × `0068`，预期） |
+| `frida_gum_ffi.mbt`：`#external` 句柄 ×4、`mb_gum_*` shim ×14（**全部包私有**，其中 12 个 R2 由 `pub` 收敛）、`Gum::*` API ×8（已实现） | ✅ |
+| `GumState` 收紧（R2 默认决策 5）：仅 `Initialized`，死分支 `Uninitialized`/`Attached`/`Closed` 已删 | ✅ |
+| `pkg.generated.mbti` API 快照 | ✅ 已同步为新导出面（**0 个 `mb_gum_*`**、`GumState` 仅 `Initialized`）；由 `moon check` 自动再生成，本轮未跑 `moon info`、未手工编辑 |
+| devkit 链接 / GObject 胶水 / 真实 gum 运行时 / 许可审查（G1/G2） | ❌ 后续轮（门禁保持开放） |
+| 五项门禁（clean / check --deny-warn / build / test / fmt --check） | ✅ 全部 exit 0，4/4 测试通过 |
 
 ## 文档索引
 

@@ -1,6 +1,6 @@
 # frida_gum_ffi · 设计契约（DESIGN.md）
 
-> Round-1 / 2026-11-06 ｜ 状态：架构与声明可评审，无 shim 实现、无 hook 逻辑；**实现设门禁**
+> Round-2（R2 冻结前 P0 整改）/ 2026-11-07 ｜ 状态：桌面 stub 实现 + 4 测试全过（`moon check --deny-warn` 等五项门禁全绿）；**真实 devkit 链接仍设门禁（G1/G2 开放）**
 
 ## 1. 分层位置与职责
 
@@ -10,7 +10,8 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 
 ```
 组合根（选择插桩方案）
-   ├─► frida_gum_ffi::Gum ──► mb_gum_* shim ──► libfrida-gum.a (gum C API)
+   ├─► frida_gum_ffi::Gum ──► mb_gum_* shim（包私有）──► stub/mb_gum_stub.c（本轮）
+   │                                            └──► libfrida-gum.a (gum C API)（G1/G2 门禁后）
    └─► ptrace_lite::Target  （互斥备选）
 ```
 
@@ -24,9 +25,9 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 | `Gum { runtime, interceptor, state, hook_count }` | 进程级单例包装值 |
 | `InvocationContext { hook_id, point_cut, thread_id, depth, function_address, args, return_value }` | 只读上下文快照；**不含 CPU 寄存器原始指针**，避免跨线程悬挂引用 |
 | `ModuleInfo` / `MemoryRegion` / `MemoryProtection` | 枚举结果 |
-| `PointCut` / `GumState` | Enter/Leave；Uninitialized/Initialized/Attached/Closed |
+| `PointCut` / `GumState` | Enter/Leave；`GumState` 收紧为实际使用的 `Initialized`（R2 默认决策 5：死分支 `Uninitialized`/`Attached`/`Closed` 已删，不补齐状态机） |
 | `Address` / `HookId` | `UInt64` 别名 |
-| `GumError` | 12 个错误构造（含 `PtraceDenied`、`LicenseReviewRequired`） |
+| `GumError` | 13 个错误构造（含 `PtraceDenied`、`LicenseReviewRequired`） |
 | `InstrumentationBackend` trait | `attach` / `detach` / `read` 契约（供组合根选择方案） |
 
 ## 4. 错误模型
@@ -46,7 +47,7 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 | module 数组 | `mb_gum_enumerate_modules` | `mb_gum_modules_free` | 唯一释放点 |
 | 读写缓冲 | `FixedArray[Byte]` / `Bytes` | 调用方持有 | 校验 length |
 
-`Gum::close` 幂等，重复调用返回 `NotInitialized`。
+`Gum::close` / `Gum::detach` 统一措辞：**不会二次释放，重复调用返回明确错误**（重复 close → `NotInitialized`；重复 detach → `DetachFailed`，运行时已关闭 → `NotInitialized`）。
 
 ## 6. 线程 / 并发边界（ADR-0009，最严格）
 
@@ -69,7 +70,7 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 | 类别 | 声明 | 规则 |
 |---|---|---|
 | 外部类型 | 4 个 `#external pub type` | C `void*`；不引用计数；**永不跨模块传递** |
-| 外部函数 | 14 个 `pub extern "C" fn mb_gum_* = "…"` | 转发 gum C API；统一 status code |
+| 外部函数 | 14 个 `extern "C" fn mb_gum_* = "…"`（**包私有 · 私有实现 ABI，非公共 API**，均不出现在 `moon info` 快照） | 转发 gum C API；统一 status code。其中 12 个在 `frida_gum_ffi.mbt`（R2 默认决策 6 由 `pub` 收敛为包私有），2 个在 `internal.mbt`（`mb_gum_region_at` / `mb_gum_current_context`） |
 | 回调签名 | `mb_gum_set_callbacks(interceptor, hook_id, cb : FuncRef[(() -> Unit) -> Unit], closure : () -> Unit) -> Int` | `FuncRef` 无捕获；`closure` 用 `#owned(closure)`，detach 时 `moonbit_decref` |
 | `#borrow` | `mb_gum_attach(symbol)`、`mb_gum_memory_read(dst)`、`mb_gum_memory_write(src)`、`mb_gum_module_at(dst)` | MoonBit 保留所有权，C 侧只读/填充，不 decref |
 | 缓冲 | `FixedArray[Byte]` / `Bytes` + `length` | 地址/长度校验；W^X 约束由调用方保证 |
@@ -86,7 +87,7 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 | 白盒 | 回调重入 / `get_depth`、事务配平、`ignore_current_thread` 语义 |
 | 平台 | Android arm64 native 入口 hook；root / ptrace_scope / SELinux 记录 errno |
 | 合规 | devkit 上游许可逐项清单、静态链接分发结论 |
-| 门禁 | `moon fmt --check` / `moon check`（本轮不加 `--deny-warn`） |
+| 门禁 | `moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check`（R2 在 `frida_gum_ffi/` 依次实跑，全部 exit 0；测试数不得少于 R1 的 4 个） |
 
 ## 11. 验收标准（实现轮，且必须先过 G1/G2 门禁）
 
@@ -100,7 +101,9 @@ E1（P0）MoonBit 回调线程安全 · E5 W^X/SELinux · Q2 subprojects 许可 
 
 ## 13. 当前状态与 TODO
 
-`frida_gum_ffi.mbt` 已写入 4 个 `#external` 句柄、14 个 shim 声明、值类型、错误模型与 8 个 `declare` API，公开 API 有 `///` 文档注释与 `TODO(实现轮)`。**无 devkit、无 C shim、无业务逻辑；实现被 ADR-0006 门禁挡在 W2 之后**。
+`frida_gum_ffi.mbt` 已写入 4 个 `#external` 句柄、14 个 `mb_gum_*` shim 声明（**全部包私有**，其中 12 个由 `pub` 收敛）、值类型、错误模型与 8 个已实现的 `Gum::*` API；`stub/mb_gum_stub.c` 桌面 stub 已实现 Interceptor 表 / 内存区 / 模块与区间表，`moon test` **4/4 全过**（1 黑盒 + 3 白盒）。**无 devkit 链接、无真实 gum 运行时；真实实现仍被 ADR-0006 G1/G2 门禁挡在后续轮**。
+
+快照：仓内 `pkg.generated.mbti` 已与新导出面一致（**0 个 `mb_gum_*` 导出、`GumState` 仅 `Initialized`**）——该文件由 `moon check` 的 `rr_moon_pkg` 特性在门禁运行中自动再生成，本轮未手动运行 `moon info`、未手工编辑任何 `pkg.generated.mbti`（`pkg.generated.mbti.r1` 为 R1 基线副本，保持只读未动）。
 
 ## References
 

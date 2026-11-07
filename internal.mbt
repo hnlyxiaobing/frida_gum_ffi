@@ -1,8 +1,9 @@
 ///|
-/// ---- 私有 shim 与解析辅助（不导出，pkg.generated.mbti 不变）----
+/// ---- 私有 shim 与解析辅助（不导出，pkg.generated.mbti 不含本节符号）----
 ///
-/// API.md 的 12 个公开 shim 存在两处缺口，此处以**私有** `extern "C"` 补齐，
-/// 不扩大导出面（导出签名以 API.md / pkg.generated.mbti 为准）：
+/// R2 默认决策 6 后，`frida_gum_ffi.mbt` 的 12 个 `mb_gum_*` 也已收敛为包私有，
+/// 与本节的 2 个私有 shim 合计 14 个 `mb_gum_*` C 声明，**全部是私有实现 ABI，非公共 API**。
+/// 本节补齐两处数据源缺口：
 ///   1. `Gum::regions` 无数据源 shim → `mb_gum_region_at`；
 ///   2. 回调闭包签名固定为 `() -> Unit`，InvocationContext 无回传通道
 ///      → `mb_gum_current_context`（stub 序列化、MoonBit 侧解析）。

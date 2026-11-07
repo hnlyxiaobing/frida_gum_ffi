@@ -1,8 +1,8 @@
 # frida_gum_ffi · 公开 API（API.md）
 
-> 与 `pkg.generated.mbti` 一致。`declare` 函数**无实现**（预期 `0068`）；`extern "C"` 只有声明。
-> `preferred_target = "native"`。错误传播统一 `raise GumError`。
-> **实现门禁**：ADR-0006 的 G1（许可）+ G2（更小替代评估）通过前不进入实现轮。
+> 与 `pkg.generated.mbti` 一致。`extern "C"` shim **只有声明、无 MoonBit 侧实现**，且已收敛为**包私有**（见下节）。
+> `preferred_target = "native"`。错误传播统一 `raise GumError`。`Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}` 为**已实现**的桌面 stub 实现（真实 frida-gum devkit 未链接）。
+> **实现门禁**：ADR-0006 的 G1（许可）+ G2（更小替代评估）通过前不链接真实 devkit（本轮维持开放，表述不变）。
 
 ## 外部句柄（`#external` = C `void*`）
 
@@ -13,9 +13,11 @@
 | `GumListenerRaw` | `GumInvocationListener*` | `mb_gum_detach` |
 | `GumModuleRaw` | 模块枚举数组 | `mb_gum_modules_free` |
 
-## 外部 C shim 声明（14 个）
+## 外部 C shim 声明（12 个 · 包私有 · 私有实现 ABI，非公共 API）
 
-| shim | 所有权 / 回调 | 语义 |
+> **可见性（R2 默认决策 6）**：下列 12 个 `mb_gum_*` 已由 `pub` 改为包私有，**不再出现在 `moon info` 快照（`pkg.generated.mbti`）中**；调用方只能经 `Gum::*` MoonBit 层 API 使用。`internal.mbt` 另有 2 个包私有 shim（`mb_gum_region_at` / `mb_gum_current_context`），合计 14 个 `mb_gum_*` C 声明**全部为私有实现 ABI，非公共 API**。C 符号由 `stub/mb_gum_stub.c` 提供，链接真实 devkit 受 G1/G2 门禁约束。
+
+| shim（包私有） | 所有权 / 回调 | 语义 |
 |---|---|---|
 | `mb_gum_init_embedded() -> GumRuntimeRaw` | — | 进程级，必须且只能一次 |
 | `mb_gum_deinit_embedded(runtime)` | — | 释放运行时 |
@@ -34,16 +36,16 @@
 
 ## 值类型 / 错误 / 契约
 
-`Gum` · `InvocationContext` · `ModuleInfo` · `MemoryRegion` · `MemoryProtection` · `PointCut` · `GumState` · `GumError`（`pub suberror`，13 个构造）· `Address` / `HookId`（`UInt64` 别名）· `InstrumentationBackend`(trait)。
+`Gum` · `InvocationContext` · `ModuleInfo` · `MemoryRegion` · `MemoryProtection` · `PointCut` · `GumState`（R2 默认决策 5 收紧：仅保留实际使用的 `Initialized` 分支，`Uninitialized` / `Attached` / `Closed` 死分支已删）· `GumError`（`pub suberror`，13 个构造）· `Address` / `HookId`（`UInt64` 别名）· `InstrumentationBackend`(trait)。
 
-## MoonBit 侧公开 API（全部 `declare`）
+## MoonBit 侧公开 API（全部已实现 · 桌面 stub）
 
 | 签名 | 参数与所有权 | 返回 / 错误 | 资源与线程约束 | TODO |
 |---|---|---|---|---|
 | `Gum::init() -> Gum raise GumError` | 无参数 | 进程级单例 / `GumError`（含 `PtraceDenied` / `LicenseReviewRequired`） | **init/deinit 单线程各一次**；失败逆序释放 | devkit 链接、许可清单、ptrace 权限 |
-| `Gum::close(self) -> Unit raise GumError` | 消耗释放责任 | `Unit` / `NotInitialized` | 幂等；所有句柄释放 | — |
+| `Gum::close(self) -> Unit raise GumError` | 消耗释放责任 | `Unit` / `NotInitialized` | **不会二次释放，重复调用返回明确错误**（重复 close → `NotInitialized`）；所有句柄释放 | — |
 | `Gum::attach(self, symbol : Bytes, on_enter : (InvocationContext) -> Unit, on_leave : (InvocationContext) -> Unit) -> HookId raise GumError` | `symbol` 只读；两个回调经 FuncRef+`#owned` 传 C 侧 | `HookId` / `AttachFailed`、`UnknownSymbol` | **回调在被钩线程同步、可重入**；禁止阻塞/跨线程 JNI | GObject vtable 胶水、事务配平、重入保护 |
-| `Gum::detach(self, hook_id : HookId) -> Unit raise GumError` | `hook_id` 由 attach 返回 | `Unit` / `DetachFailed` | 释放 listener 与 `#owned` 闭包 | — |
+| `Gum::detach(self, hook_id : HookId) -> Unit raise GumError` | `hook_id` 由 attach 返回 | `Unit` / `DetachFailed`、`NotInitialized` | **不会二次释放，重复调用返回明确错误**（重复 detach → `DetachFailed`；已 close → `NotInitialized`）；释放 listener 与 `#owned` 闭包 | — |
 | `Gum::memory_read(self, address : Address, length : Int) -> Bytes raise GumError` | `self` 只读 | 原始字节 / `InvalidAddress`、`MemoryReadFailed` | 缓冲由 MoonBit 持有；校验长度 | 地址有效性 |
 | `Gum::memory_write(self, address : Address, data : Bytes) -> Unit raise GumError` | `data` 只读 | `Unit` / `MemoryWriteFailed` | 调用方须保证目标页可写与 W^X | mprotect 策略 |
 | `Gum::modules(self) -> Array[ModuleInfo] raise GumError` | `self` 只读 | 模块列表 / `ModuleEnumerateFailed` | 枚举结果由 `mb_gum_modules_free` 释放 | — |
@@ -55,4 +57,7 @@
 
 ## 状态与已知阻塞
 
-`moon check`：✅ 0 error，8 × `0068`。`moon build` / `moon test`：❌ **预期链接期失败**（shim 未实现）。实现：❌ **ADR-0006 门禁未通过**。
+`moon clean` / `moon check --deny-warn` / `moon build` / `moon test` / `moon fmt --check`：✅ 全部 exit 0，**4 个测试全过**（1 黑盒 + 3 白盒，与 R1 基线持平）。
+
+快照对账：R2 前 `pkg.generated.mbti` 中 `mb_gum_*` 导出恰为 **12 个**；本轮私有化后仓内 `pkg.generated.mbti` 已显示 **0 个** `mb_gum_*` 导出、`GumState` 仅 `Initialized`（该文件由 `moon check` 的 `rr_moon_pkg` 特性在门禁运行中**自动再生成**；本轮**未**手动运行 `moon info`、**未**手工编辑该文件），与本节及 `_build` 接口文件逐项一致。
+**实现门禁**：ADR-0006 G1（15 个 subprojects 许可逐项审查）+ G2（更小替代评估）**保持开放**，真实 frida-gum devkit 链接仍被阻塞，本轮不触碰。
