@@ -12,7 +12,7 @@
 
 **三处报告修正（`docs/research-and-verification.md` D3）**：
 
-1. **许可**：frida-gum 与 frida-core 的 `COPYING` 逐字相同，均为 **wxWindows Library Licence 3.1**（LGPL-2.0-or-later + `EXCEPTION NOTICE` 第 2 条静态链接例外），不是「LGPL/wxWindows 混合」。但 15 个 `subprojects/*.wrap` 上游组件许可待核，且静态链接进闭源 App 的解读须法务复核（Q2/Q3）。
+1. **许可**：frida-gum 与 frida-core 的 `COPYING` **主体一致**，均为 **wxWindows Library Licence 3.1**（LGPL-2.0-or-later + `EXCEPTION NOTICE` 第 2 条静态链接例外），不是「LGPL/wxWindows 混合」；但非逐字相同——gum 的 `COPYING`（5696B）另附第三方 BSD-3-Clause 片段声明（Mozilla/Closure/regenerator），core 的（2416B）无附录（详见 `LICENSE-AUDIT.md`）。但 15 个 `subprojects/*.wrap` 上游组件许可待核，且静态链接进闭源 App 的解读须法务复核（Q2/Q3）。
 2. **能力边界**：gum 只做进程内插桩；设备发现 / spawn-attach / 传输 / QuickJS-V8 运行时属 **frida-core**；Java 方法 hook 需 ART 插桩 + `frida-java-bridge`，且 **Frida 17.0.0 起 bridges 不再捆绑**。本库单独做不到 Java hook。
 3. **更小替代**：ShadowHook / bhook / xHook / Dobby / And64InlineHook 均为 MIT 或 Apache-2.0、免 root、体积远小于 gum devkit。
 
