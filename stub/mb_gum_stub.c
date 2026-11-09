@@ -1,12 +1,12 @@
 /*
- * frida_gum_ffi — 桌面 C shim stub（ADR-0006 许可门禁 G1/G2 未通过，真实 devkit 禁止引入/链接/下载）。
+ * frida_gum_ffi — 桌面 C shim stub（G1/G2 双门禁未通过，见 DECISIONS.md；真实 devkit 禁止引入/链接/下载）。
  *
  * 本文件是**项目自带的 gum 行为模拟桩**，不是伪实现：
  *   - 模拟 interceptor 表（符号 → hook id → listener）、模拟进程内存区、模块表、内存区间表；
  *   - 使 moon build / moon test 在 Windows 桌面真实编译、链接、运行；
- *   - 「链接真实 frida-gum devkit」继续受 ADR-0006 许可门禁（G1 许可审查 + G2 更小替代评估）约束，本轮不做。
+ *   - 「链接真实 frida-gum devkit」继续受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，当前不做。
  *
- * 回调路径（ADR-0009）：`FuncRef[(() -> Unit) -> Unit]` + `#owned closure` 二元组。
+ * 回调路径（见 DECISIONS.md「回调桥设计」）：`FuncRef[(() -> Unit) -> Unit]` + `#owned closure` 二元组。
  * stub 保存 (cb, closure) 指针对：
  *   - 触发时：直接调用 cb(closure)；实测本工具链闭包参数为 borrow 约定，
  *     调用不消费引用（rc 不变），无需 incref；
@@ -17,7 +17,7 @@
  *   0  OK
  *   1  unknown symbol（attach；事务提交时回传）
  *   2  attach failed / already attached
- *   3  license review required（ADR-0006 门禁未通过，init 探针回传）
+ *   3  license review required（G1/G2 门禁未通过，init 探针回传）
  *   4  ptrace denied（init 探针回传）
  *   5  not initialized（无活跃运行时）
  *   6  buffer too small / bad args
@@ -652,7 +652,7 @@ int32_t mb_gum_test_fire(
   return MB_GUM_OK;
 }
 
-/* 许可 / ptrace 门禁开关（模拟 ADR-0006 门禁未通过时 init 的可观察信号）。 */
+/* 许可 / ptrace 门禁开关（模拟 G1/G2 门禁未通过时 init 的可观察信号）。 */
 MOONBIT_FFI_EXPORT
 int32_t mb_gum_test_set_gate(int32_t gate, int32_t enabled) {
   if (gate == MB_GATE_LICENSE) {

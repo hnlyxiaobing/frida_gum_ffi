@@ -6,14 +6,14 @@
 ///   - 重复 init（已有活跃运行时）→ `AlreadyInitialized`；重复 close / 未 init 操作 → `NotInitialized`；
 ///   - 失败逆序释放；`close` 释放全部句柄（含未 detach 的 listener 与 `#owned` 闭包）；
 ///   - C status → `GumError` 映射见 `stub/mb_gum_stub.c` 头部契约。
-/// 桌面 stub：真实 frida-gum devkit 链接受 ADR-0006 许可门禁（G1 许可审查 + G2 更小替代评估）约束，本轮不做。
+/// 桌面 stub：真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，当前不做。
 
 ///|
 /// C status → `GumError`（init 阶段；3 = 许可门禁，4 = ptrace，9 = 重复 init）。
 fn init_failure(code : Int32) -> GumError {
   if code == 3 {
     GumError::LicenseReviewRequired(
-      "ADR-0006 许可门禁（G1 许可审查 + G2 更小替代评估）未通过，禁止链接真实 frida-gum devkit",
+      "许可门禁（G1 许可审查 + G2 更小替代评估，见 DECISIONS.md）未通过，禁止链接真实 frida-gum devkit",
     )
   } else if code == 4 {
     GumError::PtraceDenied(
@@ -85,7 +85,7 @@ pub fn Gum::close(self : Gum) -> Unit raise GumError {
 ///|
 /// 按符号挂 hook；`on_enter` / `on_leave` 均在被钩线程同步执行，回调内禁止阻塞与跨线程 JNI。
 ///
-/// 回调桥（ADR-0009）：无捕获适配器 `invoke_closure`（`FuncRef`）+ 捕获用户回调的
+/// 回调桥（见 DECISIONS.md「回调桥设计」）：无捕获适配器 `invoke_closure`（`FuncRef`）+ 捕获用户回调的
 /// `#owned` 闭包二元组传 C 侧；detach 时由 stub `moonbit_decref` 成对释放。
 pub fn Gum::attach(
   self : Gum,
@@ -120,7 +120,7 @@ pub fn Gum::attach(
       None => ()
     }
   }
-  // 无捕获适配器（ADR-0009）：`FuncRef` + `#owned` 闭包二元组传 C 侧；
+  // 无捕获适配器（见 DECISIONS.md「回调桥设计」）：`FuncRef` + `#owned` 闭包二元组传 C 侧；
   // detach / close 时由 stub `moonbit_decref` 成对释放闭包。
   let st2 = mb_gum_set_callbacks(self.runtime, hook_id, fn(f) { f() }, closure)
   if st2 != 0 {

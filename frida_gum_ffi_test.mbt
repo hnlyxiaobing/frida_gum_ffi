@@ -2,8 +2,8 @@
 // Prefer high-level behaviors over implementation details.
 // Run `moon test` to execute and `moon test --update` to refresh snapshots.
 //
-// 本轮为桌面 stub（stub/mb_gum_stub.c 模拟 interceptor 表 / 内存区 / 模块与区间表）：
-// 真实 frida-gum devkit 链接受 ADR-0006 许可门禁（G1 许可审查 + G2 更小替代评估）约束，本轮不做。
+// 当前为桌面 stub（stub/mb_gum_stub.c 模拟 interceptor 表 / 内存区 / 模块与区间表）：
+// 真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，暂不进行。
 
 ///|
 /// 逐字节比较（不依赖 `Bytes` 的 `Eq` 语义）。

@@ -1,7 +1,7 @@
 ///|
 /// ---- 私有 shim 与解析辅助（不导出，pkg.generated.mbti 不含本节符号）----
 ///
-/// R2 默认决策 6 后，`frida_gum_ffi.mbt` 的 12 个 `mb_gum_*` 也已收敛为包私有，
+/// shim 可见性收敛决策（见 DECISIONS.md）后，`frida_gum_ffi.mbt` 的 12 个 `mb_gum_*` 也已收敛为包私有，
 /// 与本节的 2 个私有 shim 合计 14 个 `mb_gum_*` C 声明，**全部是私有实现 ABI，非公共 API**。
 /// 本节补齐两处数据源缺口：
 ///   1. `Gum::regions` 无数据源 shim → `mb_gum_region_at`；
