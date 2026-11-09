@@ -256,7 +256,9 @@ static uint64_t mb_thread_id(void) {
 #ifdef _WIN32
   return (uint64_t)GetCurrentThreadId();
 #else
-  return 1ULL;
+  /* POSIX：用 pthread_self() 作线程标识。仅要求「并发存活的线程互异」，
+   * 并发测试（4 个同时存活的 worker）依赖该性质；线程退出后值可复用，不在断言范围。 */
+  return (uint64_t)(uintptr_t)pthread_self();
 #endif
 }
 
