@@ -2,7 +2,7 @@
 /// ---- GumInvocationListener vtable 胶水 · 接口预留契约（本文件仅契约文档，无声明）----
 ///
 /// 本节是 G1→G2 解禁后「真实 GObject listener 胶水」的**接口预留与类型设计**，
-/// 不链接任何真实二进制（ADR-0006 红线）。预留签名当前声明于
+/// 不链接任何真实二进制（本仓库 G1/G2 门禁决策 红线）。预留签名当前声明于
 /// `frida_gum_ffi_wbtest.mbt`「listener vtable 胶水（接口预留）」节（与其余测试缝同
 /// 处置：仅供白盒测试调用，规避 `--deny-warn` 的 unused_value 告警；真实胶水落地时
 /// 随实现迁入 `internal.mbt` 并由 C shim 内部构造），符号由 `stub/mb_gum_stub.c`
@@ -36,7 +36,7 @@
 /// ) -> Int32 = "mb_gum_listener_glue_destroy"
 /// ```
 ///
-/// 真实胶水的职责边界（ADR-0009 决策 2/3/4，实现时不得偏离）：
+/// 真实胶水的职责边界（本仓库回调线程契约，实现时不得偏离）：
 ///   1. GObject 侧：class_init/instance_init 注册 `on_enter` / `on_leave` 两个
 ///      `GumInvocationListenerInterface` vtable 槽，并管理 listener 实例生命周期；
 ///   2. 两个槽函数由**被钩线程**同步调用、可重入——其唯一职责是把

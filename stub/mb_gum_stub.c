@@ -833,7 +833,7 @@ int32_t mb_gum_marshal_drain(int32_t max_events) {
 /* 真实 GObject 胶水契约（G1→G2 解禁后实现）：class_init/instance_init 注册
  * on_enter/on_leave 两个 vtable 槽；槽函数由**被钩线程**调用，唯一职责是把
  * GumInvocationContext 浅拷贝入 marshal 队列，绝不直接执行 MoonBit 闭包、
- * 绝不阻塞、绝不保存栈上指针（ADR-0009 决策 4）。本 stub 按同一契约模拟。 */
+ * 绝不阻塞、绝不保存栈上指针。本 stub 按同一契约模拟。 */
 
 static struct mb_listener_glue *mb_find_live_glue(void *handle) {
   int32_t i;

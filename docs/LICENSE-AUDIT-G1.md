@@ -1,6 +1,6 @@
 # LICENSE-AUDIT-G1.md — frida-gum `subprojects/*.wrap` 15 组件许可逐项清单（G1 前置，Q2 事实层）
 
-> 日期：**2026-11-09**（R4 轮）｜ 审计方式：**网络只读**——主控 2026-11-09 授权口径：`web_fetch` 只读抓取 frida-gum 仓库 `subprojects/*.wrap` **清单文本**与各上游组件 **LICENSE/COPYING 文本**（两类文本，仅对话内处理 + 摘录进本文件）；**未下载/落盘/链接任何 devkit、源码包、压缩包、二进制**，未建任何 wrap 原文副本，未 git clone `[已复验]`。
+> 日期：**2026-11-09**｜ 审计方式：**网络只读**——本次审计的授权范围：`web_fetch` 只读抓取 frida-gum 仓库 `subprojects/*.wrap` **清单文本**与各上游组件 **LICENSE/COPYING 文本**（两类文本，仅对话内处理 + 摘录进本文件）；**未下载/落盘/链接任何 devkit、源码包、压缩包、二进制**，未建任何 wrap 原文副本，未 git clone `[已复验]`。
 > 证据等级：网络文本一律 **`[仅据文档]`**（每条附 URL + 摘录 + 访问日期 2026-11-09）；法律解读一律 **`[推断]`**（非法律意见）；未核实 **`[仍需实测]`**，不硬凑。
 > 范围：本文只固定「wrap 清单 + 各组件许可原文事实 + 兼容性标注 + 法务审查简报」；**G1 门禁状态不变（未通过）**——法务/用户终裁未闭环，结论性合规判定一律不得写成「已合规」。
 > 关联：`LICENSE-AUDIT.md`（frida-gum 主文与 wxWindows 例外条款）、`DECISIONS.md`「门禁状态」、`G2-ALTERNATIVES-EVAL.md`（更小替代评估）。
@@ -12,7 +12,7 @@
 | 项 | 内容 | 等级 |
 |---|---|---|
 | 抓取对象 | ① `frida/frida-gum` `subprojects/*.wrap` 清单文本 15 份；② 各组件 LICENSE/COPYING 文本 15 份；③ G2 评估对象 LICENSE/README（见 G2 文档） | `[已复验]` |
-| 禁止对象 | frida-gum devkit（`frida-gum-devkit-*.tar.xz` 等）、源码包/tarball/zip、`.a/.so/.dll` 二进制——**全程未获取、未落盘、未链接**（ADR-0006 / D8-4 红线） | `[已复验]` |
+| 禁止对象 | frida-gum devkit（`frida-gum-devkit-*.tar.xz` 等）、源码包/tarball/zip、`.a/.so/.dll` 二进制——**全程未获取、未落盘、未链接**（本仓库红线） | `[已复验]` |
 | 落盘物 | 仅本文件（摘录为文本引用）；wrap/LICENSE 原文未建副本 | `[已复验]` |
 | Q12（devkit 清单/体积核对） | **未做**（须 G1 闭环后方可获取 devkit 实物） | `[仍需实测]` |
 
@@ -38,7 +38,7 @@
 | 14 | v8.wrap | `https://github.com/frida-forks/v8.git` | `f6d7f6610f2f21e2817ed180b72ea750a3f63ce8` | v8-15.7 |
 | 15 | xz.wrap | `https://github.com/frida-forks/xz.git` | `68289232393af1ff1756bcf05164cedfd792df59` | liblzma |
 
-**与 ADR-0006 已具名清单的交叉核对**：ADR-0006/COMPATIBILITY 具名 6 个（capstone/glib/quickjs/openssl/v8/xz）全部在列 ✓；其余 9 个（glib-networking / json-glib / libdwarf / libffi / libsoup / libunwind / minizip-ng / sqlite / tinycc）此前仅有「…」占位、名称未登记，本轮**首次固化** `[仅据文档]`。数量恰为 **15**，与 ADR-0006「15 个上游组件」一致。
+**与既有具名清单的交叉核对**：既有清单具名 6 个（capstone/glib/quickjs/openssl/v8/xz）全部在列 ✓；其余 9 个（glib-networking / json-glib / libdwarf / libffi / libsoup / libunwind / minizip-ng / sqlite / tinycc）此前仅有「…」占位、名称未登记，本轮**首次固化** `[仅据文档]`。数量恰为 **15**，与既有「15 个上游组件」记录一致。
 
 > 注：wrap 清单是 frida-gum **仓库构建依赖全集**；`libfrida-gum.a` devkit 实际编入的子集（如 GumJS 相关 v8/quickjs 是否编入）**须 G1 闭环后按 devkit 实物核对（Q12）** `[仍需实测]`。
 

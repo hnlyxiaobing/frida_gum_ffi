@@ -97,7 +97,7 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 
 ## 12. 风险与待验证
 
-> 本节是本库「不得进入架构决策」事项的跟踪点（内容源自开发期决策记录，已内联）。
+> 本节是本库「不得进入架构决策」事项的跟踪点（内容已内联）。
 
 1. **回调线程安全 `[待验证假设]`（最高优先，P0）**：MoonBit 运行时在被钩线程执行回调的线程安全（GC、引用计数、重入）本机未实测，直接决定回调桥设计是否成立。最小实验：Linux x86-64 native 目标下从一个 pthread 反复调用无捕获 `FuncRef` 与 `#owned` 闭包，观察引用计数/崩溃；再加可重入场景。
 2. **W^X / SELinux 部署限制 `[待验证假设]`（P1）**：W^X / SELinux `untrusted_app` 对 inline hook（`mprotect PROT_WRITE|PROT_EXEC`）的实际限制；是否需要 root / `ptrace_scope` 未实测。最小实验：目标设备上做一次最小 inline hook 与一次 `PTRACE_ATTACH`，记录 errno。决定部署形态，是 G2 评估输入。

@@ -1,6 +1,6 @@
 # E1-CALLBACK-THREAD-SAFETY.md — 被钩线程闭包线程安全：marshal 设计 + 本地验证 + E1 原实验方案
 
-> 日期：**2026-11-09**（R4 轮）｜ 关联：`../../docs/adr/ADR-0009-jni-thread-and-callback-ownership.md` 决策 4（marshal 到 owner 线程）、`../../docs/open-questions.md` **E1（P0）**、`DECISIONS.md`「回调桥设计」。
+> 日期：**2026-11-09**｜ 关联：本仓库「回调 marshal 到 owner 线程」决策、`DECISIONS.md`「回调桥设计」；本文回答的问题是：被钩线程能否直接、反复执行 MoonBit 闭包（E1，P0）。
 > 证据等级口径：本地实跑 = `[已复验]`；文本/设计依据 = `[仅据文档]`；法律/机制解读 = `[推断]`；未实测 = `[仍需实测]`。**本文不写「已跑通」**——E1 原实验口径（Linux pthread 直接执行 MoonBit 闭包）本机 Windows 无法执行，方案见 §4，状态 `[仍需实测]`。
 
 ---
@@ -9,13 +9,13 @@
 
 **把「MoonBit 闭包能否安全地在被钩线程执行」从运行时前提降级为设计不变量**：被钩线程（GumInvocationListener vtable 槽）只做上下文浅拷贝入队，MoonBit 闭包的唯一执行点收敛到 owner 线程的派发泵 `Gum::pump_callbacks`。该路径已本地实测（真实 OS 线程并发入队 + 单线程派发，11/11 测试全绿）`[已复验]`；E1 原实验（若未来需要「被钩线程直接执行闭包」的直调路径）仍须在 Linux 实测 `[仍需实测]`，**本设计不依赖其结果**。
 
-## 1. 问题（ADR-0009 / E1）
+## 1. 问题（回调线程安全 / E1）
 
 - frida-gum 的 `on_enter` / `on_leave` **同步执行在被钩线程、可重入**（`gum_invocation_context_get_depth` 与 per-thread listener data 即为证）`[仅据文档]`。
 - MoonBit `FuncRef` 只能无捕获；带状态回调是「函数 + `#owned` 闭包」二元组（DECISIONS §5）。
 - `[待验证假设]`（E1 原文）：**MoonBit 运行时（GC / 引用计数 / 重入）在非 owner 线程执行闭包的线程安全本机未实测**——若不安全，直调路径设计不成立。
 
-## 2. 设计：被钩线程 → owner 线程 marshal（ADR-0009 决策 4 落地）
+## 2. 设计：被钩线程 → owner 线程 marshal（本仓库回调线程决策落地）
 
 ```
 被钩线程（任意，可重入）                owner 线程（MoonBit 运行行线程）
@@ -49,7 +49,7 @@ mb_marshal_enqueue（互斥队列，           对每条记录：置 mb_ctx →
 
 ### 2.3 与真实 GObject 胶水的映射（接口预留）
 
-`../listener_glue.mbt`（契约文档）+ `mb_gum_listener_glue_*`（stub 契约模拟）已按真实 `GumInvocationListenerInterface` vtable 形状预留：`on_enter` / `on_leave` 两槽被钩线程调用、只入队；create `#owned` 接管闭包、destroy 成对释放。**不链接任何真实二进制**（ADR-0006 红线）。G1→G2 解禁后，真实胶水把 `GumInvocationContext*` 序列化为同一 marshal 记录格式即可，MoonBit 侧零改动。
+`../listener_glue.mbt`（契约文档）+ `mb_gum_listener_glue_*`（stub 契约模拟）已按真实 `GumInvocationListenerInterface` vtable 形状预留：`on_enter` / `on_leave` 两槽被钩线程调用、只入队；create `#owned` 接管闭包、destroy 成对释放。**不链接任何真实二进制**（本仓库 G1/G2 门禁决策 红线）。G1→G2 解禁后，真实胶水把 `GumInvocationContext*` 序列化为同一 marshal 记录格式即可，MoonBit 侧零改动。
 
 ## 3. 本地可验证部分：实测证据
 

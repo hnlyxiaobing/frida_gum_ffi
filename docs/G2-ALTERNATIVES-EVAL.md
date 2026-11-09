@@ -1,18 +1,18 @@
 # G2-ALTERNATIVES-EVAL.md — MIT/Apache 免 root 替代方案评估（G2 设计侧，仅据文档）
 
-> 日期：**2026-11-09**（R4 轮）｜ 范围：**设计侧评估**——许可、能力面、与本项目需求的差距、取舍论证。
-> **红线声明**：G2 的「真实 devkit 链接 + 真实 hook 验证」在 G1→G2 通过前一律不做（ADR-0006 / D8-4）；本文**未链接任何真实二进制、未做任何设备验证**，全部能力/许可陈述标 `[仅据文档]`（URL + 摘录 + 访问日期 2026-11-09），结论性选型标 `[仍需实测]`。
-> 关联：`DECISIONS.md` §1（G1/G2 双门禁）、`LICENSE-AUDIT-G1.md`（G1 许可清单）、`E1-CALLBACK-THREAD-SAFETY.md`（回调线程安全）、`../../docs/adr/ADR-0006-frida-deferred-with-gate.md`（更小替代决策）。
+> 日期：**2026-11-09**｜ 范围：**设计侧评估**——许可、能力面、与本项目需求的差距、取舍论证。
+> **红线声明**：G2 的「真实 devkit 链接 + 真实 hook 验证」在 G1→G2 通过前一律不做；本文**未链接任何真实二进制、未做任何设备验证**，全部能力/许可陈述标 `[仅据文档]`（URL + 摘录 + 访问日期 2026-11-09），结论性选型标 `[仍需实测]`。
+> 关联：`DECISIONS.md` §1（G1/G2 双门禁）、`LICENSE-AUDIT-G1.md`（G1 许可清单）、`E1-CALLBACK-THREAD-SAFETY.md`（回调线程安全）。本库的决策是：G1 许可审计与 G2 更小替代验证均通过前，不接入真实 devkit。
 
 ---
 
-## 0. 本项目需求基线（源自申报书 §4/§5、DECISIONS §4）
+## 0. 本项目需求基线（见 `DECISIONS.md` §4）
 
 | # | 需求 | 来源 |
 |---|---|---|
-| N1 | 函数级 hook：按「库名 + 符号名」或地址挂接，回调拿得到**参数与返回值**（`InvocationContext.args/return_value`） | 申报书场景 1；`Gum::attach` 契约 |
+| N1 | 函数级 hook：按「库名 + 符号名」或地址挂接，回调拿得到**参数与返回值**（`InvocationContext.args/return_value`） | `Gum::attach` 契约 |
 | N2 | Enter/Leave 两次截断、可重入深度观测（`depth`） | `InvocationContext` 值类型 |
-| N3 | 回调线程安全：回调不在被钩线程执行 MoonBit 闭包（E1 marshal） | ADR-0009 决策 4 |
+| N3 | 回调线程安全：回调不在被钩线程执行 MoonBit 闭包（E1 marshal） | 本仓库回调线程决策 |
 | N4 | 进程内存读写 + 模块/内存区间枚举 | `memory_read/write`、`modules`、`regions` |
 | N5 | 稳定 C ABI 供 MoonBit FFI 封装；桌面（Linux x86-64 / Windows）与 Android（arm64）目标 | `preferred_target=native`；DESIGN §7 |
 | N6 | 显式错误模型（许可门禁可观察、权限拒绝可观察） | `GumError`、DECISIONS §2 |
@@ -42,8 +42,8 @@
 
 ### 1.3 xHook（bytedance/xhook）
 
-- **许可/文档**：**上游仓库当前不可达**——`https://api.github.com/repos/bytedance/xhook` 与 `raw.githubusercontent.com/bytedance/xhook/master/` 均 **HTTP 404**（2026-11-09）`[已复验]`；ADR-0006 历史调研记为 MIT `[仅据文档-历史调研]`，本轮**无法核对原文** `[仍需实测]`。
-- **能力面**（ADR-0006 历史口径 `[仅据文档-历史调研]`）：Android PLT hook（ByteHook 前身），MIT，免 root。
+- **许可/文档**：**上游仓库当前不可达**——`https://api.github.com/repos/bytedance/xhook` 与 `raw.githubusercontent.com/bytedance/xhook/master/` 均 **HTTP 404**（2026-11-09）`[已复验]`；既有历史调研记为 MIT `[仅据文档-历史调研]`，本轮**无法核对原文** `[仍需实测]`。
+- **能力面**（既有历史口径 `[仅据文档-历史调研]`）：Android PLT hook（ByteHook 前身），MIT，免 root。
 - **差距**：同 1.2（PLT only、proxy 自写、仅 Android）；且仓库不可达，**不建议选型**。
 
 ### 1.4 Dobby（jmpews/Dobby）
@@ -55,12 +55,12 @@
 - **回调模型**：inline hook + 用户代理函数（README 未描述 listener 语义）`[仅据文档]`；细粒度 API（DobbyHook 等）未在 README 展开，**不据未见文档下断言** `[仍需实测]`。
 - **差距 vs N1/N2**：同 1.1——无 enter/leave listener 与 args/retval 抽取；trampoline 层需自研；但**平台面是唯一覆盖桌面 + Android 的替代**。
 
-### 1.5 附：And64InlineHook / LSPlant（ADR-0006 已判定，不展开）
+### 1.5 附：And64InlineHook / LSPlant（既有判定，不展开）
 
-- And64InlineHook：MIT、仅 arm64、极小 inline hook `[仅据文档-历史调研]`（ADR-0006）；能力面窄（无 ARM32/桌面）。
-- LSPlant：**LGPL-3.0 且无静态链接例外** `[仅据文档-历史调研]`（ADR-0006）——闭源静态分发负担**重于** frida-gum（有例外），且只覆盖 **Java/ART 方法 hook**（本项目非目标），否决理由维持。
+- And64InlineHook：MIT、仅 arm64、极小 inline hook `[仅据文档-历史调研]`；能力面窄（无 ARM32/桌面）。
+- LSPlant：**LGPL-3.0 且无静态链接例外** `[仅据文档-历史调研]`——闭源静态分发负担**重于** frida-gum（有例外），且只覆盖 **Java/ART 方法 hook**（本项目非目标），否决理由维持。
 
-## 2. 能力对比矩阵（`[仅据文档]`；gum 列据 frida-gum 公开文档/ADR-0006 口径）
+## 2. 能力对比矩阵（`[仅据文档]`；gum 列据 frida-gum 公开文档）
 
 | 维度 | frida-gum（现方案） | ShadowHook | ByteHook | xHook | Dobby |
 |---|---|---|---|---|---|
@@ -88,7 +88,7 @@
    - **情景 A（维持现方案）**：需要桌面 + Android、需要通用 enter/leave + args/retval 语义、不愿自研 trampoline → **仍需 gum**（G1 法务结论 + G2 链接验证后接入；本库接口不变）。
    - **情景 B（Android-only 可接受）**：MIT 栈（ShadowHook ± ByteHook）+ 本仓 E1 marshal + 自研签名 trampoline（仅 arm64 起步）→ 许可最优，弃用 gum 实现任务；**代价**：N2 depth/args 语义自研、桌面测试缺位。
    - **情景 C（跨平台但精简）**：Dobby（Apache-2.0）做 inline hook + 自研 listener 层；许可负担介于两者，工作量最大头在 listener 语义复刻。
-   - **最终选型待 G2 真实验证**（hook 生效/detach 无悬挂/回调线程实测）后由主控+用户裁决 `[仍需实测]`。
+   - **最终选型待 G2 真实验证**（hook 生效/detach 无悬挂/回调线程实测）后由本仓库维护者决定 `[仍需实测]`。
 6. **xHook 建议剔除候选**：上游仓库 404（2026-11-09）`[已复验]`，许可无法核对 `[仍需实测]`。
 
 ## 4. G2 门禁状态
