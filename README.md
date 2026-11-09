@@ -2,7 +2,8 @@
 
 **frida-gum 插桩核心的 C-FFI 封装 —— 为 MoonBit 程序提供函数 hook、内存读写与模块枚举能力。**
 
-> 状态（2026-11-07）：**桌面 stub 实现已落地**（`stub/mb_gum_stub.c` 模拟 interceptor 表 / 内存区 / 模块与区间表），`Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}` 8 个 API 均已实现，`moon test` **4/4 全过**（1 黑盒 + 3 白盒），`moon clean` / `moon check --deny-warn` / `moon build` / `moon test` / `moon fmt --check` 五项门禁全绿。12 个 `mb_gum_*` C shim 已由 `pub` 收敛为**包私有**（私有实现 ABI，非公共 API，不再出现在 `moon info` 快照）。
+> 状态（2026-11-09，R4）：**桌面 stub 实现已落地**（`stub/mb_gum_stub.c` 模拟 interceptor 表 / 内存区 / 模块与区间表），`Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}` 8 个 API 均已实现，`moon test` **11/11 全过**（1 黑盒 + 10 白盒，含 R4 E1 marshal 并发/重入/关闭竞态），`moon clean` / `moon check --deny-warn` / `moon build` / `moon test` / `moon fmt --check` 五项门禁全绿。12 个 `mb_gum_*` C shim 已由 `pub` 收敛为**包私有**（私有实现 ABI，非公共 API，不再出现在 `moon info` 快照）。
+> **R4 门禁状态**：E1（被钩线程闭包线程安全）= marshal 设计 + 本地并发测试绿，Linux pthread 原实验 [仍需实测]（见 `E1-CALLBACK-THREAD-SAFETY.md`）；**G1 许可 = 事实层 15/15 组件清单已固化、法务/用户终裁未闭环（门禁未通过）**（见 `LICENSE-AUDIT-G1.md`）；G2 = MIT/Apache 替代方案评估已登记（见 `G2-ALTERNATIVES-EVAL.md`），**未获取/落盘/链接任何 devkit 或源码包**。
 > `preferred_target` 已由 `wasm` 改为 `native`（唯一配置改动，理由见 `DECISIONS.md`「`preferred_target = "native"`」）。
 > **实现门禁（见 `DECISIONS.md`「G1 / G2 双门禁」）**：**真实 frida-gum devkit 链接仍不进入实现候选**，须先通过「G1 许可审查 + G2 更小替代方案评估」两道门禁（当前保持开放）；当前只链接自带桌面 stub，不下载/引入任何 devkit。
 
@@ -48,7 +49,7 @@
 
 - **测试策略**：当前为桌面 stub 全链路（init → attach → memory 读写回环 → modules/regions → detach → close）、回调重入与事务配平、闭包引用计数成对、缓冲容量校验、许可/ptrace 门禁可观察路径；G1/G2 通过后的真实实现阶段再做 x86-64 Linux hook libc、Android arm64 入口 hook 与许可清单核对。
 - **验收标准**（真实实现阶段，门禁通过后）：hook 生效且 detach 无悬挂；许可审查通过；回调线程安全实测通过。
-- **门禁实跑**：`moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check` 全部 exit 0；`moon test` 输出 `Total tests: 4, passed: 4, failed: 0`（测试数与既有 4 个基线持平）。
+- **门禁实跑（2026-11-09）**：`moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check` 全部 exit 0；`moon test` 输出 `Total tests: 11, passed: 11, failed: 0`（R4 新增 7 条 E1 marshal 测试；测试数只增不减）。
 
 ## 当前状态 / 产物
 
@@ -58,8 +59,8 @@
 | `GumState` 收紧（死分支收紧决策，见 `DECISIONS.md`）：仅 `Initialized`，死分支 `Uninitialized`/`Attached`/`Closed` 已删 | ✅ |
 | `pkg.generated.mbti` API 快照 | ✅ 已同步为新导出面（**0 个 `mb_gum_*`**、`GumState` 仅 `Initialized`）；由 `moon check` 自动再生成，未手工编辑 |
 | devkit 链接 / GObject 胶水 / 真实 gum 运行时 / 许可审查（G1/G2） | ❌ 后续阶段（门禁保持开放） |
-| 五项门禁（clean / check --deny-warn / build / test / fmt --check） | ✅ 全部 exit 0，4/4 测试通过 |
+| 五项门禁（clean / check --deny-warn / build / test / fmt --check） | ✅ 全部 exit 0，11/11 测试通过 |
 
 ## 文档索引
 
-`DESIGN.md`（设计契约）· `API.md`（公开接口）· `DECISIONS.md`（设计决策与门禁状态）· `LICENSE-AUDIT.md`（许可盘点与合规含义）。本文档集自足，不依赖仓库外文件。
+`DESIGN.md`（设计契约）· `API.md`（公开接口）· `DECISIONS.md`（设计决策与门禁状态）· `LICENSE-AUDIT.md`（许可盘点与合规含义）· `LICENSE-AUDIT-G1.md`（R4：15 组件逐项清单）· `E1-CALLBACK-THREAD-SAFETY.md`（R4：marshal 不变量与实验方案）· `G2-ALTERNATIVES-EVAL.md`（R4：MIT 替代方案评估）。本文档集自足，不依赖仓库外文件。
