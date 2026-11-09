@@ -3,7 +3,7 @@
 /// Keep main focused; move logic into the library package.
 /// Run with `moon run cmd/main` from the project root.
 ///
-/// 桌面 stub 演示（真实 frida-gum devkit 链接受 G1/G2 双门禁约束，见 DECISIONS.md；暂不进行）：
+/// 桌面 stub 演示（真实 frida-gum devkit 链接受 G1/G2 双门禁约束，见 docs/DECISIONS.md；暂不进行）：
 /// init → modules/regions → memory 读写回环 → detach → close。
 fn demo() -> Unit raise {
   let g = @frida_gum_ffi.Gum::init()

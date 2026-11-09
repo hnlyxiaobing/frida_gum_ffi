@@ -10,7 +10,7 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 
 ```
 组合根（选择插桩方案）
-   ├─► frida_gum_ffi::Gum ──► mb_gum_* shim（包私有）──► stub/mb_gum_stub.c（当前）
+   ├─► frida_gum_ffi::Gum ──► mb_gum_* shim（包私有）──► ../stub/mb_gum_stub.c（当前）
    │                                            └──► libfrida-gum.a (gum C API)（G1/G2 门禁后）
    └─► ptrace_lite::Target  （互斥备选）
 ```
@@ -70,7 +70,7 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 | 类别 | 声明 | 规则 |
 |---|---|---|
 | 外部类型 | 4 个 `#external pub type` | C `void*`；不引用计数；**永不跨模块传递** |
-| 外部函数 | 14 个 `extern "C" fn mb_gum_* = "…"`（**包私有 · 私有实现 ABI，非公共 API**，均不出现在 `moon info` 快照） | 转发 gum C API；统一 status code。其中 12 个在 `frida_gum_ffi.mbt`（由 `pub` 收敛为包私有，见 `DECISIONS.md`「shim 可见性收敛」），2 个在 `internal.mbt`（`mb_gum_region_at` / `mb_gum_current_context`） |
+| 外部函数 | 14 个 `extern "C" fn mb_gum_* = "…"`（**包私有 · 私有实现 ABI，非公共 API**，均不出现在 `moon info` 快照） | 转发 gum C API；统一 status code。其中 12 个在 `../frida_gum_ffi.mbt`（由 `pub` 收敛为包私有，见 `DECISIONS.md`「shim 可见性收敛」），2 个在 `../internal.mbt`（`mb_gum_region_at` / `mb_gum_current_context`） |
 | 回调签名 | `mb_gum_set_callbacks(interceptor, hook_id, cb : FuncRef[(() -> Unit) -> Unit], closure : () -> Unit) -> Int` | `FuncRef` 无捕获；`closure` 用 `#owned(closure)`，detach 时 `moonbit_decref` |
 | `#borrow` | `mb_gum_attach(symbol)`、`mb_gum_memory_read(dst)`、`mb_gum_memory_write(src)`、`mb_gum_module_at(dst)` | MoonBit 保留所有权，C 侧只读/填充，不 decref |
 | 缓冲 | `FixedArray[Byte]` / `Bytes` + `length` | 地址/长度校验；W^X 约束由调用方保证 |
@@ -87,7 +87,7 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 | 白盒 | 回调重入 / `get_depth`、事务配平、`ignore_current_thread` 语义 |
 | 平台 | Android arm64 native 入口 hook；root / ptrace_scope / SELinux 记录 errno |
 | 合规 | devkit 上游许可逐项清单、静态链接分发结论 |
-| 门禁 | `moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check`（在 `frida_gum_ffi/` 依次实跑，全部 exit 0；测试数不得少于 4 个） |
+| 门禁 | `moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check`（在项目根目录依次实跑，全部 exit 0；测试数不得少于 4 个） |
 
 ## 11. 验收标准（真实实现阶段，且必须先过 G1/G2 门禁）
 
@@ -108,9 +108,9 @@ L2 动态插桩层的**进程内插桩 FFI 封装**。职责：把 frida-gum 的
 
 ## 13. 当前状态与 TODO
 
-`frida_gum_ffi.mbt` 已写入 4 个 `#external` 句柄、14 个 `mb_gum_*` shim 声明（**全部包私有**，其中 12 个由 `pub` 收敛）、值类型、错误模型与 8 个已实现的 `Gum::*` API；`stub/mb_gum_stub.c` 桌面 stub 已实现 Interceptor 表 / 内存区 / 模块与区间表，`moon test` **4/4 全过**（1 黑盒 + 3 白盒）。**无 devkit 链接、无真实 gum 运行时；真实实现仍被 G1/G2 门禁挡在后续阶段（见 `DECISIONS.md`）**。
+`../frida_gum_ffi.mbt` 已写入 4 个 `#external` 句柄、14 个 `mb_gum_*` shim 声明（**全部包私有**，其中 12 个由 `pub` 收敛）、值类型、错误模型与 8 个已实现的 `Gum::*` API；`../stub/mb_gum_stub.c` 桌面 stub 已实现 Interceptor 表 / 内存区 / 模块与区间表，`moon test` **4/4 全过**（1 黑盒 + 3 白盒）。**无 devkit 链接、无真实 gum 运行时；真实实现仍被 G1/G2 门禁挡在后续阶段（见 `DECISIONS.md`）**。
 
-快照：仓内 `pkg.generated.mbti` 已与新导出面一致（**0 个 `mb_gum_*` 导出、`GumState` 仅 `Initialized`**）——该文件由 `moon check` 的 `rr_moon_pkg` 特性在门禁运行中自动再生成，未手动运行 `moon info`、未手工编辑任何 `pkg.generated.mbti`。
+快照：仓内 `../pkg.generated.mbti` 已与新导出面一致（**0 个 `mb_gum_*` 导出、`GumState` 仅 `Initialized`**）——该文件由 `moon check` 的 `rr_moon_pkg` 特性在门禁运行中自动再生成，未手动运行 `moon info`、未手工编辑任何 `../pkg.generated.mbti`。
 
 ## References
 

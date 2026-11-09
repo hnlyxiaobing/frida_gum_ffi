@@ -2,7 +2,7 @@
 
 > 日期：**2026-11-09**（R4 轮）｜ 范围：**设计侧评估**——许可、能力面、与本项目需求的差距、取舍论证。
 > **红线声明**：G2 的「真实 devkit 链接 + 真实 hook 验证」在 G1→G2 通过前一律不做（ADR-0006 / D8-4）；本文**未链接任何真实二进制、未做任何设备验证**，全部能力/许可陈述标 `[仅据文档]`（URL + 摘录 + 访问日期 2026-11-09），结论性选型标 `[仍需实测]`。
-> 关联：`DECISIONS.md` §1（G1/G2 双门禁）、`LICENSE-AUDIT-G1.md`（G1 许可清单）、`E1-CALLBACK-THREAD-SAFETY.md`（回调线程安全）、`docs/adr/ADR-0006`（更小替代决策）。
+> 关联：`DECISIONS.md` §1（G1/G2 双门禁）、`LICENSE-AUDIT-G1.md`（G1 许可清单）、`E1-CALLBACK-THREAD-SAFETY.md`（回调线程安全）、`../../docs/adr/ADR-0006-frida-deferred-with-gate.md`（更小替代决策）。
 
 ---
 

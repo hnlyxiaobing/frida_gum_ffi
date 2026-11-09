@@ -6,11 +6,11 @@
 /// 桌面 C shim stub（模拟 interceptor 表 / 内存区 / 模块与区间表）见 `stub/mb_gum_stub.c`。
 /// 没有设备发现/传输/脚本运行时、没有 Java 方法 hook。
 ///
-/// 能力边界（见 DECISIONS.md「能力边界」）：仅进程内插桩（Interceptor / Memory / Module）；
+/// 能力边界（见 docs/DECISIONS.md「能力边界」）：仅进程内插桩（Interceptor / Memory / Module）；
 /// device 发现、spawn/attach、传输、QuickJS/V8 运行时属 frida-core，不在本库。
 /// Java 方法 hook 需 ART 插桩与 frida-java-bridge（Frida 17+ 不再捆绑），亦不在本库。
 ///
-/// 回调与线程总则（E1 marshal，见 E1-CALLBACK-THREAD-SAFETY.md）：on_enter/on_leave
+/// 回调与线程总则（E1 marshal，见 docs/E1-CALLBACK-THREAD-SAFETY.md）：on_enter/on_leave
 /// 在**被钩线程**只被浅拷贝入队（GumInvocationListener vtable 胶水契约，见
 /// `listener_glue.mbt`），**不在被钩线程执行 MoonBit 闭包**；闭包只在 owner 线程的
 /// `Gum::pump_callbacks` 派发中执行、可重入。
@@ -89,7 +89,7 @@ pub(all) struct InvocationContext {
 }
 
 ///|
-/// 运行时状态机（死分支收紧决策，见 DECISIONS.md：仅保留实际代码路径使用到的分支）。
+/// 运行时状态机（死分支收紧决策，见 docs/DECISIONS.md：仅保留实际代码路径使用到的分支）。
 /// 实现只在 `Gum::init` 成功时置为 `Initialized`，其余状态从未被构造或匹配，
 /// 故 `Uninitialized` / `Attached` / `Closed` 三个死分支已删除（不补齐状态机）。
 pub(all) enum GumState {
@@ -138,9 +138,9 @@ pub trait InstrumentationBackend {
 ///|
 /// ---- 外部 C shim 声明（包私有 · 私有实现 ABI，非公共 API）----
 /// 符号由项目自带的桌面 stub `stub/mb_gum_stub.c` 提供，一对一模拟 gum C API 语义。
-/// 链接真实 frida-gum devkit 受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，当前不做。
+/// 链接真实 frida-gum devkit 受 G1 许可审查 + G2 更小替代评估双门禁（见 docs/DECISIONS.md）约束，当前不做。
 ///
-/// 可见性（shim 可见性收敛决策，见 DECISIONS.md）：本节 12 个 `mb_gum_*` 已由 `pub` 收敛为包私有，
+/// 可见性（shim 可见性收敛决策，见 docs/DECISIONS.md）：本节 12 个 `mb_gum_*` 已由 `pub` 收敛为包私有，
 /// 仅供 `gum.mbt` / 包内白盒测试调用，**不出现在 `moon info` 快照（pkg.generated.mbti）中**。
 /// 对外唯一入口是 `gum.mbt` 的 `Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}`。
 
@@ -231,4 +231,4 @@ extern "C" fn mb_gum_modules_free(modules : GumModuleRaw) -> Unit = "mb_gum_modu
 ///|
 /// ---- MoonBit 侧公开 API ----
 /// `Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}`
-/// 的实现见 `gum.mbt`（签名与 API.md / pkg.generated.mbti 一致）。
+/// 的实现见 `gum.mbt`（签名与 docs/API.md / pkg.generated.mbti 一致）。

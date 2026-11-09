@@ -2,7 +2,7 @@
 // Use them to validate internal helpers or invariants.
 // Keep them focused; public behavior belongs in `_test.mbt`.
 //
-// 当前为桌面 stub：真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，暂不进行。
+// 当前为桌面 stub：真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 docs/DECISIONS.md）约束，暂不进行。
 
 ///|
 /// 测试缝（stub 提供，仅供测试触发模拟调用 / 门禁切换 / 引用计数断言）。
@@ -15,7 +15,7 @@ extern "C" fn mb_gum_test_fire(
 ) -> Int32 = "mb_gum_test_fire"
 
 ///|
-/// 门禁开关：gate 1 = 许可（G1/G2 双门禁，见 DECISIONS.md），2 = ptrace。
+/// 门禁开关：gate 1 = 许可（G1/G2 双门禁，见 docs/DECISIONS.md），2 = ptrace。
 extern "C" fn mb_gum_test_set_gate(gate : Int32, enabled : Int32) -> Int32 = "mb_gum_test_set_gate"
 
 ///|
@@ -31,7 +31,7 @@ extern "C" fn mb_gum_test_live_closures() -> Int32 = "mb_gum_test_live_closures"
 extern "C" fn mb_gum_test_closure_rc(hook_id : UInt64) -> Int32 = "mb_gum_test_closure_rc"
 
 ///|
-/// 许可门禁可观察路径（见 DECISIONS.md「LicenseReviewRequired」）：门禁未过时 `Gum::init` 主动返回
+/// 许可门禁可观察路径（见 docs/DECISIONS.md「LicenseReviewRequired」）：门禁未过时 `Gum::init` 主动返回
 /// `LicenseReviewRequired` / `PtraceDenied` 而非静默继续；失败的 init 不消耗生命周期。
 test "许可门禁可观察路径" {
   assert_eq(mb_gum_test_set_gate(1, 1), 0)
@@ -54,7 +54,7 @@ test "许可门禁可观察路径" {
 }
 
 ///|
-/// hook 回调触发与注销（回调对，见 DECISIONS.md「回调桥设计」）：`FuncRef` 无捕获适配器 + `#owned` 闭包
+/// hook 回调触发与注销（回调对，见 docs/DECISIONS.md「回调桥设计」）：`FuncRef` 无捕获适配器 + `#owned` 闭包
 /// 二元组由 stub 成对持有/释放；回调内可重入（depth 递增）；detach 后不再触发；
 /// close 释放未摘除的 listener 与闭包。
 /// 注意：`on_enter`/`on_leave` 签名固定为不带 error，断言只记录上下文、在回调外执行。
@@ -207,7 +207,7 @@ extern "C" fn mb_gum_listener_glue_on_leave(
 extern "C" fn mb_gum_listener_glue_destroy(listener : GumListenerRaw) -> Int32 = "mb_gum_listener_glue_destroy"
 
 ///|
-/// E1 marshal 基础路径（见 E1-CALLBACK-THREAD-SAFETY.md）：被钩线程只入队、
+/// E1 marshal 基础路径（见 docs/E1-CALLBACK-THREAD-SAFETY.md）：被钩线程只入队、
 /// owner 线程 pump 派发；闭包执行线程收敛到 owner 线程；上下文浅拷贝保真；
 /// pump 错误路径（max_events <= 0 → CallbackBridgeFailed）。
 test "E1 marshal：被钩线程入队、owner 线程派发（线程收敛）" {

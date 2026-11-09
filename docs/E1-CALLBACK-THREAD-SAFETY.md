@@ -1,6 +1,6 @@
 # E1-CALLBACK-THREAD-SAFETY.md — 被钩线程闭包线程安全：marshal 设计 + 本地验证 + E1 原实验方案
 
-> 日期：**2026-11-09**（R4 轮）｜ 关联：`docs/adr/ADR-0009-jni-thread-and-callback-ownership.md` 决策 4（marshal 到 owner 线程）、`docs/open-questions.md` **E1（P0）**、`DECISIONS.md`「回调桥设计」。
+> 日期：**2026-11-09**（R4 轮）｜ 关联：`../../docs/adr/ADR-0009-jni-thread-and-callback-ownership.md` 决策 4（marshal 到 owner 线程）、`../../docs/open-questions.md` **E1（P0）**、`DECISIONS.md`「回调桥设计」。
 > 证据等级口径：本地实跑 = `[已复验]`；文本/设计依据 = `[仅据文档]`；法律/机制解读 = `[推断]`；未实测 = `[仍需实测]`。**本文不写「已跑通」**——E1 原实验口径（Linux pthread 直接执行 MoonBit 闭包）本机 Windows 无法执行，方案见 §4，状态 `[仍需实测]`。
 
 ---
@@ -34,7 +34,7 @@ mb_marshal_enqueue（互斥队列，           对每条记录：置 mb_ctx →
 
 | # | 不变量 | 实现位置 | 验证 |
 |---|---|---|---|
-| I1 | 被钩线程**从不**执行 MoonBit 闭包；只 `memcpy` 级浅拷贝入队 | `stub/mb_gum_stub.c` `mb_marshal_enqueue` / `mb_gum_listener_glue_on_enter|on_leave` | T1/T2/T5 `[已复验]` |
+| I1 | 被钩线程**从不**执行 MoonBit 闭包；只 `memcpy` 级浅拷贝入队 | `../stub/mb_gum_stub.c` `mb_marshal_enqueue` / `mb_gum_listener_glue_on_enter|on_leave` | T1/T2/T5 `[已复验]` |
 | I2 | MoonBit 闭包只在调用 `pump_callbacks` 的 owner 线程执行 | `mb_gum_marshal_drain`（`cb(closure)` 唯一调用点） | T1 断言执行线程 id == owner `[已复验]` |
 | I3 | 并发入队安全（互斥队列），无丢失、无错乱 | SRWLOCK（Windows）/ pthread_mutex（POSIX） | T2 真实 OS 线程 4×32 `[已复验]` |
 | I4 | 可重入：派发中可再入队，观测深度递增、FIFO 尾随 | 记录携带入队时 `depth` | T3 `[已复验]` |
@@ -49,7 +49,7 @@ mb_marshal_enqueue（互斥队列，           对每条记录：置 mb_ctx →
 
 ### 2.3 与真实 GObject 胶水的映射（接口预留）
 
-`listener_glue.mbt`（契约文档）+ `mb_gum_listener_glue_*`（stub 契约模拟）已按真实 `GumInvocationListenerInterface` vtable 形状预留：`on_enter` / `on_leave` 两槽被钩线程调用、只入队；create `#owned` 接管闭包、destroy 成对释放。**不链接任何真实二进制**（ADR-0006 红线）。G1→G2 解禁后，真实胶水把 `GumInvocationContext*` 序列化为同一 marshal 记录格式即可，MoonBit 侧零改动。
+`../listener_glue.mbt`（契约文档）+ `mb_gum_listener_glue_*`（stub 契约模拟）已按真实 `GumInvocationListenerInterface` vtable 形状预留：`on_enter` / `on_leave` 两槽被钩线程调用、只入队；create `#owned` 接管闭包、destroy 成对释放。**不链接任何真实二进制**（ADR-0006 红线）。G1→G2 解禁后，真实胶水把 `GumInvocationContext*` 序列化为同一 marshal 记录格式即可，MoonBit 侧零改动。
 
 ## 3. 本地可验证部分：实测证据
 
@@ -76,7 +76,7 @@ moon build                exit 0   （main.exe 产出，链接项目内 stub）
 moon test                 exit 0   Total tests: 11, passed: 11, failed: 0
 moon fmt --check          exit 0
 moon info                 exit 0   （快照 +Gum::pump_callbacks，已随代码提交）
-git diff --exit-code -- pkg.generated.mbti cmd/main/pkg.generated.mbti   exit 0
+git diff --exit-code -- ../pkg.generated.mbti ../cmd/main/pkg.generated.mbti   exit 0
 ```
 
 ### 3.3 实现期发现（设计注意，`[已复验]` + 机制 `[推断]`）
@@ -90,7 +90,7 @@ git diff --exit-code -- pkg.generated.mbti cmd/main/pkg.generated.mbti   exit 0
 
 **实验 E1-A（pthread 直调无捕获 FuncRef 与 #owned 闭包）**
 
-1. 环境：Linux x86-64、GCC/Clang、`moon 0.1.20261104` / `moonc v0.10.20+65efd5b93`、`moon.mod` `preferred_target = "native"`（同本仓）。
+1. 环境：Linux x86-64、GCC/Clang、`moon 0.1.20261104` / `moonc v0.10.20+65efd5b93`、`../moon.mod` `preferred_target = "native"`（同本仓）。
 2. C 侧探针（实验用临时文件 `stub/e1_pthread_probe.c`，实验后不入库）：
    - `mb_e1_run_workers(int threads, int iters)`：`pthread_create` N（1/2/8）个 worker，每个对全局保存的 `(cb, closure)` 对调用 `cb(closure)` 共 M（1e4/1e5/1e6）次；其中 1/100 次在回调内再触发一次（重入）；全程 C11 原子计数器记录调用次数（**不**用 MoonBit 侧数据，避免掩盖运行时问题）。
    - `mb_e1_closure_rc()`：返回 `Moonbit_rc_count(Moonbit_object_header(closure))`。

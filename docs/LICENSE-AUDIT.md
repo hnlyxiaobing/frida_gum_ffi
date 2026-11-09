@@ -26,7 +26,7 @@
 - **修正一处早期表述**：「frida-gum 与 frida-core 的 `COPYING` **逐字相同**」**不准确** `[已复验]`：
   - 两者**主体（wxWindows 3.1 正文 + EXCEPTION NOTICE 四条）一致**；
   - 但 frida-gum 的 `COPYING`（5696 B）在主体之后**追加了第三方 BSD-3-Clause 片段声明**（Mozilla source-map、Closure Compiler Base64 VLQ、Facebook regenerator 三段版权与免责声明）；frida-core 的 `COPYING`（2416 B）**无**该附录。
-  - 正确表述应为：「许可主体一致（均 wxWindows 3.1 + 静态链接例外）；frida-gum 另附第三方 BSD-3-Clause 片段声明」。本仓 `README.md` 的同源转述已按本节更正。
+  - 正确表述应为：「许可主体一致（均 wxWindows 3.1 + 静态链接例外）；frida-gum 另附第三方 BSD-3-Clause 片段声明」。本仓 `../README.md` 的同源转述已按本节更正。
 - `frida 17.25.2` PyPI 分类器即 `wxWindows Library Licence, Version 3.1`（沿用早期调研记录）`[已复验-本地等价]`（此条是早期网络核验记录的转述，本次盘点未重新抓取 PyPI）。
 
 ---
@@ -62,10 +62,10 @@
 
 | 位置 | 表述 | 核对结论 | 处置 |
 |---|---|---|---|
-| 早期调研记录 | "frida-gum 与 frida-core 的 `COPYING` 逐字相同" | **不准确**（主体一致、gum 多 BSD 附录）`[已复验]` | 本仓 `README.md` §更正 1 已按 §2 更正 |
+| 早期调研记录 | "frida-gum 与 frida-core 的 `COPYING` 逐字相同" | **不准确**（主体一致、gum 多 BSD 附录）`[已复验]` | 本仓 `../README.md` §更正 1 已按 §2 更正 |
 | 许可类型与风险评级 | "wxWindows 3.1（含静态链接例外）"；许可风险由早期评估的"高"修正为"中——但需逐项核对 15 个 subprojects + 法务复核" | **成立** `[已复验]` | 不变 |
 | `DESIGN.md` §10 合规 | "devkit 上游许可逐项清单、静态链接分发结论" 为 G1 交付物 | **成立**，与本文 §4 一致 | 不变；本文即该项的第一份输入 |
-| `README.md` / `API.md` / `README.mbt.md` 的 G1/G2 门禁表述 | 门禁保持开放、不链接 devkit | **成立** `[已复验]` | 不变 |
+| `../README.md` / `API.md` / `../README.mbt.md` 的 G1/G2 门禁表述 | 门禁保持开放、不链接 devkit | **成立** `[已复验]` | 不变 |
 
 ---
 
@@ -74,6 +74,6 @@
 1. **`subprojects/*.wrap` 15 个上游组件逐项许可清单** `[仍需实测]` → 产出逐项表格后并入本仓 `DECISIONS.md`「门禁状态」与本文。
 2. **法务对闭源分发形态的结论**（静态链接 wxWindows 3.1 进闭源 App 的合规解读）`[仍需实测]`。
 3. **17.25.2 devkit 实际组件/体积核对** `[仍需实测]` —— 须在允许获取 devkit 的阶段做。
-4. ~~`README.md`「逐字相同」转述的清理~~ —— **已完成**（本仓内闭环，见 §2）。
+4. ~~`../README.md`「逐字相同」转述的清理~~ —— **已完成**（本仓内闭环，见 §2）。
 
 > 本文档只固定「许可证原文事实 + 合规含义」，**不构成法律意见**；G1 通过与否由法务结论 + 逐项许可清单决定。门禁状态的唯一口径见本仓 `DECISIONS.md`「门禁状态」。

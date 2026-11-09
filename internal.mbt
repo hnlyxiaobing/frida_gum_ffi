@@ -1,7 +1,7 @@
 ///|
 /// ---- 私有 shim 与解析辅助（不导出，pkg.generated.mbti 不含本节符号）----
 ///
-/// shim 可见性收敛决策（见 DECISIONS.md）后，`frida_gum_ffi.mbt` 的 12 个 `mb_gum_*` 也已收敛为包私有，
+/// shim 可见性收敛决策（见 docs/DECISIONS.md）后，`frida_gum_ffi.mbt` 的 12 个 `mb_gum_*` 也已收敛为包私有，
 /// 与本节的私有 shim（`mb_gum_region_at` / `mb_gum_current_context` / `mb_gum_marshal_drain`）
 /// 及 `listener_glue.mbt` 的 4 个 `mb_gum_listener_glue_*` 合计 19 个 `mb_gum_*` C 声明，
 /// **全部是私有实现 ABI，非公共 API**。
@@ -9,7 +9,7 @@
 ///   1. `Gum::regions` 无数据源 shim → `mb_gum_region_at`；
 ///   2. 回调闭包签名固定为 `() -> Unit`，InvocationContext 无回传通道
 ///      → `mb_gum_current_context`（stub 序列化、MoonBit 侧解析）。
-/// 另承载 E1 marshal 派发泵（见 `E1-CALLBACK-THREAD-SAFETY.md`）：
+/// 另承载 E1 marshal 派发泵（见 `docs/E1-CALLBACK-THREAD-SAFETY.md`）：
 ///   3. 被钩线程只入队、owner 线程派发 → `mb_gum_marshal_drain`（`Gum::pump_callbacks` 的 C 侧）。
 /// 记录格式（小端）由 `stub/mb_gum_stub.c` 头部注释定义，两侧同构。
 

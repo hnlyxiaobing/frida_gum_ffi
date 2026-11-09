@@ -1,12 +1,12 @@
 /*
- * frida_gum_ffi — 桌面 C shim stub（G1/G2 双门禁未通过，见 DECISIONS.md；真实 devkit 禁止引入/链接/下载）。
+ * frida_gum_ffi — 桌面 C shim stub（G1/G2 双门禁未通过，见 docs/DECISIONS.md；真实 devkit 禁止引入/链接/下载）。
  *
  * 本文件是**项目自带的 gum 行为模拟桩**，不是伪实现：
  *   - 模拟 interceptor 表（符号 → hook id → listener）、模拟进程内存区、模块表、内存区间表；
  *   - 使 moon build / moon test 在 Windows 桌面真实编译、链接、运行；
- *   - 「链接真实 frida-gum devkit」继续受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，当前不做。
+ *   - 「链接真实 frida-gum devkit」继续受 G1 许可审查 + G2 更小替代评估双门禁（见 docs/DECISIONS.md）约束，当前不做。
  *
- * 回调路径（见 DECISIONS.md「回调桥设计」）：`FuncRef[(() -> Unit) -> Unit]` + `#owned closure` 二元组。
+ * 回调路径（见 docs/DECISIONS.md「回调桥设计」）：`FuncRef[(() -> Unit) -> Unit]` + `#owned closure` 二元组。
  * stub 保存 (cb, closure) 指针对：
  *   - 触发时：直接调用 cb(closure)；实测本工具链闭包参数为 borrow 约定，
  *     调用不消费引用（rc 不变），无需 incref；
@@ -26,18 +26,18 @@
  *   9  already initialized（进程内已有活跃 runtime）
  * module_at / region_at 约定：1 = 有效记录，0 = 枚举结束，其余为上述错误码。
  *
- * marshal 派发（E1「被钩线程 → owner 线程」设计，见 E1-CALLBACK-THREAD-SAFETY.md）：
+ * marshal 派发（E1「被钩线程 → owner 线程」设计，见 docs/E1-CALLBACK-THREAD-SAFETY.md）：
  *   - 被钩线程（或模拟被钩线程的测试缝 / 未来 GObject listener 胶水）**绝不直接执行
  *     MoonBit 闭包**，只把调用上下文浅拷贝为 mb_marshal_record 入无锁外的互斥队列；
  *   - owner 线程经 mb_gum_marshal_drain 出队并在**自己线程上**执行 (cb, closure) 对；
  *   - MoonBit 闭包的执行线程由此被收敛到 owner 线程，GC/引用计数不跨线程。
  *
  * shim 清单：
- *   公开（API.md 12 个）：mb_gum_init_embedded / mb_gum_deinit_embedded /
+ *   公开（docs/API.md 12 个）：mb_gum_init_embedded / mb_gum_deinit_embedded /
  *     mb_gum_interceptor_obtain / mb_gum_transaction / mb_gum_attach / mb_gum_detach /
  *     mb_gum_set_callbacks / mb_gum_memory_read / mb_gum_memory_write /
  *     mb_gum_enumerate_modules / mb_gum_module_at / mb_gum_modules_free
- *   私有（API.md 缺口补齐，不导出）：mb_gum_region_at（Gum::regions 数据源）、
+ *   私有（docs/API.md 缺口补齐，不导出）：mb_gum_region_at（Gum::regions 数据源）、
  *     mb_gum_current_context（回调上下文回传通道）、
  *     mb_gum_marshal_drain（owner 线程派发泵，Gum::pump_callbacks 的 C 侧）、
  *     mb_gum_listener_glue_*（GumInvocationListener vtable 胶水接口预留，见下）
@@ -369,7 +369,7 @@ static const struct mb_symbol *mb_find_symbol(const uint8_t *name, int32_t len) 
   return NULL;
 }
 
-/* ===================== 公开 shim（API.md 12 个） ===================== */
+/* ===================== 公开 shim（docs/API.md 12 个） ===================== */
 
 MOONBIT_FFI_EXPORT
 void *mb_gum_init_embedded(void) {
@@ -633,9 +633,9 @@ void mb_gum_modules_free(void *modules) {
   }
 }
 
-/* ===================== 私有 shim（API.md 缺口补齐，不导出） ===================== */
+/* ===================== 私有 shim（docs/API.md 缺口补齐，不导出） ===================== */
 
-/* Gum::regions 的数据源：API.md 的 12 个公开 shim 未覆盖内存区间枚举。 */
+/* Gum::regions 的数据源：docs/API.md 的 12 个公开 shim 未覆盖内存区间枚举。 */
 MOONBIT_FFI_EXPORT
 int32_t mb_gum_region_at(int32_t index, uint8_t *dst, int32_t capacity) {
   const struct mb_region *r;
@@ -668,7 +668,7 @@ int32_t mb_gum_region_at(int32_t index, uint8_t *dst, int32_t capacity) {
   return 1;
 }
 
-/* 回调上下文回传通道：`mb_gum_set_callbacks` 的闭包签名是 `() -> Unit`（API.md 固定），
+/* 回调上下文回传通道：`mb_gum_set_callbacks` 的闭包签名是 `() -> Unit`（docs/API.md 固定），
  * 每次触发的 InvocationContext 由此 shim 序列化给 MoonBit 侧解析。 */
 MOONBIT_FFI_EXPORT
 int32_t mb_gum_current_context(uint8_t *dst, int32_t capacity) {

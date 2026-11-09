@@ -19,7 +19,7 @@
 
 ### 决策
 
-1. **真实 devkit 对接不进入实现候选**，延后到双门禁通过之后；此前只链接仓库自带的桌面 stub `stub/mb_gum_stub.c`，**不下载、不链接、不引入**任何 devkit。
+1. **真实 devkit 对接不进入实现候选**，延后到双门禁通过之后；此前只链接仓库自带的桌面 stub `../stub/mb_gum_stub.c`，**不下载、不链接、不引入**任何 devkit。
 2. 进入真实链接前设两道**显式门禁**，必须同时通过：
    - **G1（许可审查）**：15 个 `subprojects/*.wrap` 上游组件**逐项许可**核对 + **wxWindows 3.1 静态链接例外（`EXCEPTION NOTICE` 第 2 条）对目标分发形态的适用性**确认 + **法务结论**；
    - **G2（更小替代方案评估）**：在 ShadowHook / bhook / xHook / Dobby 等 **MIT（或 Apache-2.0）免 root 替代**中至少评估一个，说明为何仍选 / 不选 gum（例如确需 Stalker / 跨架构 Writer-Relocator）；若替代够用，则改用 MIT 免 root 方案并注销本库真实实现任务。
@@ -55,7 +55,7 @@
 
 ### 后果
 
-实现阶段若未通过许可审查，会以明确错误暴露而不是带病运行；错误消息随附门禁说明；stub 的门禁开关（测试缝）模拟该信号，真实实现须保持同一 status code 契约（见 `stub/mb_gum_stub.c` 头部）。
+实现阶段若未通过许可审查，会以明确错误暴露而不是带病运行；错误消息随附门禁说明；stub 的门禁开关（测试缝）模拟该信号，真实实现须保持同一 status code 契约（见 `../stub/mb_gum_stub.c` 头部）。
 
 ---
 
@@ -96,7 +96,7 @@
 
 ### 理由
 
-防止能力预期错位；把边界写进文档注释与 `README.md`，让使用者在读签名前就知道缺什么。
+防止能力预期错位；把边界写进文档注释与 `../README.md`，让使用者在读签名前就知道缺什么。
 
 ### 后果
 
@@ -137,7 +137,7 @@ wasm 后端不支持 `extern "C"`（`E4156 extern "C" is unsupported in wasm bac
 
 ### 决策
 
-`moon.mod` 的 `preferred_target` 由 `"wasm"` 改为 `"native"`；Windows native 需 MSVC（`cl.exe` / `clang-cl.exe`，MinGW 不支持）；LLVM 后端不支持 FFI。
+`../moon.mod` 的 `preferred_target` 由 `"wasm"` 改为 `"native"`；Windows native 需 MSVC（`cl.exe` / `clang-cl.exe`，MinGW 不支持）；LLVM 后端不支持 FFI。
 
 ### 理由
 
@@ -165,7 +165,7 @@ FFI 模块的 `extern "C"` / `#external` / `#borrow` / `#owned` / `FuncRef` 声�
 
 ### 后果
 
-导出面收窄（`pkg.generated.mbti` 快照中 `GumState` 仅 `Initialized`）；后续若真实实现需要新状态，按加法性变更走 API 快照审阅。
+导出面收窄（`../pkg.generated.mbti` 快照中 `GumState` 仅 `Initialized`）；后续若真实实现需要新状态，按加法性变更走 API 快照审阅。
 
 ---
 
@@ -177,7 +177,7 @@ FFI 模块的 `extern "C"` / `#external` / `#borrow` / `#owned` / `FuncRef` 声�
 
 ### 决策
 
-其中 12 个（`frida_gum_ffi.mbt`）由 `pub` 收敛为**包私有**，与 `internal.mbt` 的 2 个（`mb_gum_region_at` / `mb_gum_current_context`）合计 **14 个 `mb_gum_*` 全部为私有实现 ABI、非公共 API**，均不出现在 `moon info` 快照（`pkg.generated.mbti`）中；对外唯一入口是 `Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}`（8 个 API）。
+其中 12 个（`../frida_gum_ffi.mbt`）由 `pub` 收敛为**包私有**，与 `../internal.mbt` 的 2 个（`mb_gum_region_at` / `mb_gum_current_context`）合计 **14 个 `mb_gum_*` 全部为私有实现 ABI、非公共 API**，均不出现在 `moon info` 快照（`../pkg.generated.mbti`）中；对外唯一入口是 `Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}`（8 个 API）。
 
 ### 理由
 
@@ -196,13 +196,13 @@ shim 是私有实现 ABI（转发 gum C API、统一 status code），不是稳�
 | 项 | 状态 | 证据等级 |
 |---|---|---|
 | 许可证 | **wxWindows Library Licence, Version 3.1**（GNU Library GPL v2 or later + `EXCEPTION NOTICE` 第 2 条允许以自有条款分发二进制目标码）——**不是** "LGPL/wxWindows 混合" | `[仅据文档]` |
-| 是否引入 | **未引入**：无 devkit、无 `.h` 头文件、无 `.so/.a/.dll` 库文件入库；只有项目内 `stub/mb_gum_stub.c` | `[已复验]` |
+| 是否引入 | **未引入**：无 devkit、无 `.h` 头文件、无 `.so/.a/.dll` 库文件入库；只有项目内 `../stub/mb_gum_stub.c` | `[已复验]` |
 | 是否下载/链接 | **未下载、未链接**（不下载 devkit 是硬约束） | `[已复验]` |
 | **G1（许可）门禁** | **未通过** —— devkit 所含 15 个上游组件（capstone/glib/quickjs/openssl/v8/xz…）逐项许可未核对、法务结论未取得 | `[仍需实测]` |
 | **G2（更小替代）门禁** | **未通过** —— ShadowHook / bhook / xHook 尚未评估，未说明 gum 是否仍必需 | `[仍需实测]` |
 | 未决事项 | 15 个上游组件逐项许可；静态链接 wxWindows 3.1 进闭源 App 的合规结论（法律解读属 `[推断]`） | `[仍需实测]` |
-| stub 例外 | `frida_gum_ffi` 的 C stub 是**项目内行为模拟桩**，不是真实 devkit 对接；真实对接须 **G1+G2 同时通过**后分阶段进行 | `[已复验]`（源码头注释 + `moon.pkg` `native-stub` 配置） |
+| stub 例外 | `frida_gum_ffi` 的 C stub 是**项目内行为模拟桩**，不是真实 devkit 对接；真实对接须 **G1+G2 同时通过**后分阶段进行 | `[已复验]`（源码头注释 + `../moon.pkg` `native-stub` 配置） |
 
 ## 参考（仓库内）
 
-`LICENSE-AUDIT.md`（许可原文事实与条款摘录）· `DESIGN.md`（设计契约与风险）· `API.md`（接口）· `README.md`。许可原文来源（URL，供复核比对）：`https://raw.githubusercontent.com/frida/frida-gum/main/COPYING`、`https://raw.githubusercontent.com/frida/frida-core/main/COPYING`；能力边界参考 frida 官方文档 `https://frida.re/docs/bridges`。
+`LICENSE-AUDIT.md`（许可原文事实与条款摘录）· `DESIGN.md`（设计契约与风险）· `API.md`（接口）· `../README.md`。许可原文来源（URL，供复核比对）：`https://raw.githubusercontent.com/frida/frida-gum/main/COPYING`、`https://raw.githubusercontent.com/frida/frida-core/main/COPYING`；能力边界参考 frida 官方文档 `https://frida.re/docs/bridges`。

@@ -1,19 +1,19 @@
 ///|
-/// ---- MoonBit 侧公开 API 实现（签名与 API.md / pkg.generated.mbti 一致）----
+/// ---- MoonBit 侧公开 API 实现（签名与 docs/API.md / pkg.generated.mbti 一致）----
 ///
-/// 资源与状态机（DESIGN.md §5/§6）：
+/// 资源与状态机（docs/DESIGN.md §5/§6）：
 ///   - 进程级单例 runtime；init/deinit 单线程配对调用，同时最多一个活跃运行时；
 ///   - 重复 init（已有活跃运行时）→ `AlreadyInitialized`；重复 close / 未 init 操作 → `NotInitialized`；
 ///   - 失败逆序释放；`close` 释放全部句柄（含未 detach 的 listener 与 `#owned` 闭包）；
 ///   - C status → `GumError` 映射见 `stub/mb_gum_stub.c` 头部契约。
-/// 桌面 stub：真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，当前不做。
+/// 桌面 stub：真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 docs/DECISIONS.md）约束，当前不做。
 
 ///|
 /// C status → `GumError`（init 阶段；3 = 许可门禁，4 = ptrace，9 = 重复 init）。
 fn init_failure(code : Int32) -> GumError {
   if code == 3 {
     GumError::LicenseReviewRequired(
-      "许可门禁（G1 许可审查 + G2 更小替代评估，见 DECISIONS.md）未通过，禁止链接真实 frida-gum devkit",
+      "许可门禁（G1 许可审查 + G2 更小替代评估，见 docs/DECISIONS.md）未通过，禁止链接真实 frida-gum devkit",
     )
   } else if code == 4 {
     GumError::PtraceDenied(
@@ -83,12 +83,12 @@ pub fn Gum::close(self : Gum) -> Unit raise GumError {
 }
 
 ///|
-/// 按符号挂 hook。回调经 **E1 marshal** 派发（见 `E1-CALLBACK-THREAD-SAFETY.md`）：
+/// 按符号挂 hook。回调经 **E1 marshal** 派发（见 `docs/E1-CALLBACK-THREAD-SAFETY.md`）：
 /// 被钩线程只把调用上下文浅拷贝入队，`on_enter` / `on_leave` **不在被钩线程执行**，
 /// 而在 owner 线程调用 `Gum::pump_callbacks` 时执行、可重入（`depth` 为被钩线程观测深度）；
 /// 回调内禁止阻塞与跨线程 JNI。
 ///
-/// 回调桥（见 DECISIONS.md「回调桥设计」）：无捕获适配器 `invoke_closure`（`FuncRef`）+ 捕获用户回调的
+/// 回调桥（见 docs/DECISIONS.md「回调桥设计」）：无捕获适配器 `invoke_closure`（`FuncRef`）+ 捕获用户回调的
 /// `#owned` 闭包二元组传 C 侧；detach 时由 stub `moonbit_decref` 成对释放。
 pub fn Gum::attach(
   self : Gum,
@@ -123,7 +123,7 @@ pub fn Gum::attach(
       None => ()
     }
   }
-  // 无捕获适配器（见 DECISIONS.md「回调桥设计」）：`FuncRef` + `#owned` 闭包二元组传 C 侧；
+  // 无捕获适配器（见 docs/DECISIONS.md「回调桥设计」）：`FuncRef` + `#owned` 闭包二元组传 C 侧；
   // detach / close 时由 stub `moonbit_decref` 成对释放闭包。
   let st2 = mb_gum_set_callbacks(self.runtime, hook_id, fn(f) { f() }, closure)
   if st2 != 0 {
@@ -150,7 +150,7 @@ pub fn Gum::attach(
 /// 闭包，返回本次派发条数。
 ///
 /// - 线程：**必须在 owner 线程（初始化并使用本库的线程）调用**；被钩线程只入队不执行
-///   MoonBit 闭包（E1 marshal，见 `E1-CALLBACK-THREAD-SAFETY.md`）。可重入：派发中入队的
+///   MoonBit 闭包（E1 marshal，见 `docs/E1-CALLBACK-THREAD-SAFETY.md`）。可重入：派发中入队的
 ///   新事件可在同一次 pump 中继续派发，直至 `max_events` 用尽或队列为空。
 /// - 参数：`max_events > 0` 为单次派发上限；`<= 0` 视为参数非法。
 /// - 错误：`CallbackBridgeFailed`（参数非法）；运行时已关闭 → `NotInitialized`。

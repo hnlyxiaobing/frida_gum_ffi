@@ -1,6 +1,6 @@
 # frida_gum_ffi · 公开 API（API.md）
 
-> 与 `pkg.generated.mbti` 一致。`extern "C"` shim **只有声明、无 MoonBit 侧实现**，且已收敛为**包私有**（见下节）。
+> 与 `../pkg.generated.mbti` 一致。`extern "C"` shim **只有声明、无 MoonBit 侧实现**，且已收敛为**包私有**（见下节）。
 > `preferred_target = "native"`。错误传播统一 `raise GumError`。`Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}` 为**已实现**的桌面 stub 实现（真实 frida-gum devkit 未链接）。
 > **实现门禁**：G1（许可）+ G2（更小替代评估）双门禁（见 `DECISIONS.md`「G1 / G2 双门禁」）通过前不链接真实 devkit（当前维持开放）。
 
@@ -15,7 +15,7 @@
 
 ## 外部 C shim 声明（12 个 · 包私有 · 私有实现 ABI，非公共 API）
 
-> **可见性（shim 可见性收敛，见 `DECISIONS.md`）**：下列 12 个 `mb_gum_*` 已由 `pub` 改为包私有，**不再出现在 `moon info` 快照（`pkg.generated.mbti`）中**；调用方只能经 `Gum::*` MoonBit 层 API 使用。`internal.mbt` 另有 2 个包私有 shim（`mb_gum_region_at` / `mb_gum_current_context`），合计 14 个 `mb_gum_*` C 声明**全部为私有实现 ABI，非公共 API**。C 符号由 `stub/mb_gum_stub.c` 提供，链接真实 devkit 受 G1/G2 门禁约束。
+> **可见性（shim 可见性收敛，见 `DECISIONS.md`）**：下列 12 个 `mb_gum_*` 已由 `pub` 改为包私有，**不再出现在 `moon info` 快照（`../pkg.generated.mbti`）中**；调用方只能经 `Gum::*` MoonBit 层 API 使用。`../internal.mbt` 另有 2 个包私有 shim（`mb_gum_region_at` / `mb_gum_current_context`），合计 14 个 `mb_gum_*` C 声明**全部为私有实现 ABI，非公共 API**。C 符号由 `../stub/mb_gum_stub.c` 提供，链接真实 devkit 受 G1/G2 门禁约束。
 
 | shim（包私有） | 所有权 / 回调 | 语义 |
 |---|---|---|
@@ -59,5 +59,5 @@
 
 `moon clean` / `moon check --deny-warn` / `moon build` / `moon test` / `moon fmt --check`：✅ 全部 exit 0，**4 个测试全过**（1 黑盒 + 3 白盒，测试数与既有 4 个基线持平）。
 
-快照对账：可见性收敛前 `pkg.generated.mbti` 中 `mb_gum_*` 导出恰为 **12 个**；收敛后仓内 `pkg.generated.mbti` 已显示 **0 个** `mb_gum_*` 导出、`GumState` 仅 `Initialized`（该文件由 `moon check` 的 `rr_moon_pkg` 特性在门禁运行中**自动再生成**；未手动运行 `moon info`、未手工编辑该文件），与本节及 `_build` 接口文件逐项一致。
+快照对账：可见性收敛前 `../pkg.generated.mbti` 中 `mb_gum_*` 导出恰为 **12 个**；收敛后仓内 `../pkg.generated.mbti` 已显示 **0 个** `mb_gum_*` 导出、`GumState` 仅 `Initialized`（该文件由 `moon check` 的 `rr_moon_pkg` 特性在门禁运行中**自动再生成**；未手动运行 `moon info`、未手工编辑该文件），与本节及 `_build` 接口文件逐项一致。
 **实现门禁**：G1（15 个 subprojects 许可逐项审查）+ G2（更小替代评估）**保持开放**（状态见 `DECISIONS.md`「门禁状态」），真实 frida-gum devkit 链接仍被阻塞，当前不触碰。

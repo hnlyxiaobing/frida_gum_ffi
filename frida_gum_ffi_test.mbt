@@ -3,7 +3,7 @@
 // Run `moon test` to execute and `moon test --update` to refresh snapshots.
 //
 // 当前为桌面 stub（stub/mb_gum_stub.c 模拟 interceptor 表 / 内存区 / 模块与区间表）：
-// 真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 DECISIONS.md）约束，暂不进行。
+// 真实 frida-gum devkit 链接受 G1 许可审查 + G2 更小替代评估双门禁（见 docs/DECISIONS.md）约束，暂不进行。
 
 ///|
 /// 逐字节比较（不依赖 `Bytes` 的 `Eq` 语义）。
@@ -111,7 +111,7 @@ test "gum 公开 API 全链路（桌面 stub）" {
 }
 
 ///|
-/// `Gum::pump_callbacks` 公开契约（E1 marshal 派发泵，见 E1-CALLBACK-THREAD-SAFETY.md）：
+/// `Gum::pump_callbacks` 公开契约（E1 marshal 派发泵，见 docs/E1-CALLBACK-THREAD-SAFETY.md）：
 /// 空队列派发 = 0；`max_events <= 0` → `CallbackBridgeFailed`（不 panic）；
 /// 关闭后派发 → `NotInitialized`。
 test "pump_callbacks 公开契约：空队列 / 参数非法 / 关闭后" {
