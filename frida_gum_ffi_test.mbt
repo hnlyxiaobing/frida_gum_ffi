@@ -109,3 +109,22 @@ test "gum 公开 API 全链路（桌面 stub）" {
   let r_det = Ok(g.detach(hook2)) catch { e => Err(e) }
   assert_true(r_det is Err(@frida_gum_ffi.GumError::NotInitialized))
 }
+
+///|
+/// `Gum::pump_callbacks` 公开契约（E1 marshal 派发泵，见 E1-CALLBACK-THREAD-SAFETY.md）：
+/// 空队列派发 = 0；`max_events <= 0` → `CallbackBridgeFailed`（不 panic）；
+/// 关闭后派发 → `NotInitialized`。
+test "pump_callbacks 公开契约：空队列 / 参数非法 / 关闭后" {
+  let g = @frida_gum_ffi.Gum::init()
+  // 空队列派发 = 0
+  assert_eq(g.pump_callbacks(8), 0)
+  // 参数非法 → CallbackBridgeFailed（畸形输入禁 panic，走错误枚举）
+  let r_zero = Ok(g.pump_callbacks(0)) catch { e => Err(e) }
+  assert_true(r_zero is Err(@frida_gum_ffi.GumError::CallbackBridgeFailed(_)))
+  let r_neg = Ok(g.pump_callbacks(-3)) catch { e => Err(e) }
+  assert_true(r_neg is Err(@frida_gum_ffi.GumError::CallbackBridgeFailed(_)))
+  // 关闭后派发 → NotInitialized
+  g.close()
+  let r_closed = Ok(g.pump_callbacks(8)) catch { e => Err(e) }
+  assert_true(r_closed is Err(@frida_gum_ffi.GumError::NotInitialized))
+}

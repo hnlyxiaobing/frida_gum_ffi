@@ -26,15 +26,32 @@
  *   9  already initialized（进程内已有活跃 runtime）
  * module_at / region_at 约定：1 = 有效记录，0 = 枚举结束，其余为上述错误码。
  *
+ * marshal 派发（E1「被钩线程 → owner 线程」设计，见 E1-CALLBACK-THREAD-SAFETY.md）：
+ *   - 被钩线程（或模拟被钩线程的测试缝 / 未来 GObject listener 胶水）**绝不直接执行
+ *     MoonBit 闭包**，只把调用上下文浅拷贝为 mb_marshal_record 入无锁外的互斥队列；
+ *   - owner 线程经 mb_gum_marshal_drain 出队并在**自己线程上**执行 (cb, closure) 对；
+ *   - MoonBit 闭包的执行线程由此被收敛到 owner 线程，GC/引用计数不跨线程。
+ *
  * shim 清单：
  *   公开（API.md 12 个）：mb_gum_init_embedded / mb_gum_deinit_embedded /
  *     mb_gum_interceptor_obtain / mb_gum_transaction / mb_gum_attach / mb_gum_detach /
  *     mb_gum_set_callbacks / mb_gum_memory_read / mb_gum_memory_write /
  *     mb_gum_enumerate_modules / mb_gum_module_at / mb_gum_modules_free
  *   私有（API.md 缺口补齐，不导出）：mb_gum_region_at（Gum::regions 数据源）、
- *     mb_gum_current_context（回调上下文回传通道）
+ *     mb_gum_current_context（回调上下文回传通道）、
+ *     mb_gum_marshal_drain（owner 线程派发泵，Gum::pump_callbacks 的 C 侧）、
+ *     mb_gum_listener_glue_*（GumInvocationListener vtable 胶水接口预留，见下）
  *   测试缝（仅供 _wbtest）：mb_gum_test_fire / mb_gum_test_set_gate /
- *     mb_gum_test_live_hooks / mb_gum_test_live_closures / mb_gum_test_closure_rc
+ *     mb_gum_test_live_hooks / mb_gum_test_live_closures / mb_gum_test_closure_rc /
+ *     mb_gum_test_fire_marshal / mb_gum_test_spawn_firers /
+ *     mb_gum_test_marshal_pending / mb_gum_test_marshal_dropped /
+ *     mb_gum_test_current_thread_id
+ *
+ * GumInvocationListener vtable 胶水（接口预留，G1→G2 解禁后对接真实 GObject 胶水）：
+ *   真实胶水将以 GObject 三函数（class_init/instance_init + on_enter/on_leave）实现，
+ *   on_enter/on_leave 由**被钩线程**调用，唯一职责是序列化 GumInvocationContext 入
+ *   marshal 队列；本 stub 的 mb_gum_listener_glue_* 按同一契约模拟（不链接任何真实
+ *   二进制）：create 持有 #owned 闭包、invoke 只入队、destroy 成对 moonbit_decref。
  */
 
 #include <stdint.h>
@@ -42,6 +59,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <pthread.h>
 #endif
 
 #include "moonbit.h"
@@ -183,6 +202,54 @@ struct mb_ctx {
 static struct mb_ctx mb_ctx;
 static int32_t mb_depth = 0;
 
+/* ===================== marshal 队列（被钩线程 → owner 线程） ===================== */
+
+/* 队列项：被钩线程观测到的一次调用上下文（浅拷贝，无任何 MoonBit 指针）。 */
+struct mb_marshal_record {
+  uint64_t hook_id;
+  uint8_t point;
+  uint8_t source; /* MB_MARSHAL_SRC_HOOK / MB_MARSHAL_SRC_GLUE */
+  int32_t depth;
+  uint64_t thread_id;
+  uint64_t fn_addr;
+  int32_t argc;
+  uint64_t args[MB_CTX_MAX_ARGS];
+  uint8_t has_ret;
+  uint64_t ret;
+};
+
+#define MB_MARSHAL_CAPACITY 256
+
+static struct mb_marshal_record mb_marshal_q[MB_MARSHAL_CAPACITY];
+static int32_t mb_marshal_head = 0;
+static int32_t mb_marshal_tail = 0;
+static int32_t mb_marshal_count = 0;
+static int32_t mb_marshal_dropped = 0;
+
+/* 队列互斥（被钩线程入队 / owner 线程出队）。 */
+#ifdef _WIN32
+static SRWLOCK mb_marshal_lock = SRWLOCK_INIT;
+#define MB_MARSHAL_LOCK() AcquireSRWLockExclusive(&mb_marshal_lock)
+#define MB_MARSHAL_UNLOCK() ReleaseSRWLockExclusive(&mb_marshal_lock)
+#else
+static pthread_mutex_t mb_marshal_lock = PTHREAD_MUTEX_INITIALIZER;
+#define MB_MARSHAL_LOCK() pthread_mutex_lock(&mb_marshal_lock)
+#define MB_MARSHAL_UNLOCK() pthread_mutex_unlock(&mb_marshal_lock)
+#endif
+
+/* ===================== listener vtable 胶水（接口预留） ===================== */
+
+#define MB_MAX_GLUES 8
+
+struct mb_listener_glue {
+  int32_t live;
+  uint64_t hook_id;
+  mb_closure_fn cb;
+  void *closure; /* #owned：destroy / deinit 时 moonbit_decref */
+};
+
+static struct mb_listener_glue mb_glues[MB_MAX_GLUES];
+
 /* ===================== 内部工具 ===================== */
 
 static uint64_t mb_thread_id(void) {
@@ -247,6 +314,28 @@ static void mb_release_hook(struct mb_hook *h) {
   h->active = 0;
 }
 
+/* 清空 marshal 队列（关闭/重置时丢弃未派发事件；调用方须持锁或在单线程点调用）。 */
+static void mb_marshal_clear_locked(void) {
+  mb_marshal_head = 0;
+  mb_marshal_tail = 0;
+  mb_marshal_count = 0;
+}
+
+/* 释放全部 listener 胶水及其 #owned 闭包（关闭/重置路径，成对释放不二次释放）。 */
+static void mb_glue_release_all(void) {
+  int32_t i;
+  for (i = 0; i < MB_MAX_GLUES; i++) {
+    if (mb_glues[i].live) {
+      if (mb_glues[i].closure != NULL) {
+        moonbit_decref(mb_glues[i].closure);
+        mb_glues[i].closure = NULL;
+      }
+      mb_glues[i].cb = NULL;
+      mb_glues[i].live = 0;
+    }
+  }
+}
+
 static void mb_reset_world(void) {
   int32_t i;
   for (i = 0; i < MB_SIM_MEM_SIZE; i++) {
@@ -257,6 +346,11 @@ static void mb_reset_world(void) {
     mb_hooks[i].closure = NULL;
     mb_hooks[i].cb = NULL;
   }
+  mb_glue_release_all();
+  MB_MARSHAL_LOCK();
+  mb_marshal_clear_locked();
+  MB_MARSHAL_UNLOCK();
+  mb_marshal_dropped = 0;
   mb_txn_open = 0;
   mb_txn_error = 0;
   mb_modules_live = 0;
@@ -310,6 +404,12 @@ void mb_gum_deinit_embedded(void *runtime) {
       mb_release_hook(&mb_hooks[i]); /* 成对释放 #owned 闭包 */
     }
   }
+  mb_glue_release_all(); /* 释放 listener 胶水持有的 #owned 闭包 */
+  /* 关闭竞态语义：未派发的 marshal 事件全部丢弃（不悬挂、不二次释放）；
+   * 此后 drain/fire_marshal 一律以 5（not initialized）拒绝。 */
+  MB_MARSHAL_LOCK();
+  mb_marshal_clear_locked();
+  MB_MARSHAL_UNLOCK();
   mb_state = MB_ST_UNINIT;
   mb_last_init_reason = 0;
   mb_txn_open = 0;
@@ -607,6 +707,225 @@ int32_t mb_gum_current_context(uint8_t *dst, int32_t capacity) {
   return (int32_t)need;
 }
 
+/* ===================== marshal 派发（E1：被钩线程 → owner 线程） ===================== */
+
+/* 记录来源：hook 直调测试缝 / listener vtable 胶水。 */
+#define MB_MARSHAL_SRC_HOOK 1
+#define MB_MARSHAL_SRC_GLUE 2
+
+static int32_t mb_marshal_enqueue(const struct mb_marshal_record *r) {
+  MB_MARSHAL_LOCK();
+  if (mb_marshal_count >= MB_MARSHAL_CAPACITY) {
+    mb_marshal_dropped++; /* 队列满：事件丢弃并计数，绝不阻塞被钩线程 */
+    MB_MARSHAL_UNLOCK();
+    return MB_ERR_BUFFER;
+  }
+  mb_marshal_q[mb_marshal_tail] = *r;
+  mb_marshal_tail = (mb_marshal_tail + 1) % MB_MARSHAL_CAPACITY;
+  mb_marshal_count++;
+  MB_MARSHAL_UNLOCK();
+  return MB_GUM_OK;
+}
+
+/* 1 = 出队一条，0 = 队列空。 */
+static int32_t mb_marshal_dequeue(struct mb_marshal_record *r) {
+  MB_MARSHAL_LOCK();
+  if (mb_marshal_count == 0) {
+    MB_MARSHAL_UNLOCK();
+    return 0;
+  }
+  *r = mb_marshal_q[mb_marshal_head];
+  mb_marshal_head = (mb_marshal_head + 1) % MB_MARSHAL_CAPACITY;
+  mb_marshal_count--;
+  MB_MARSHAL_UNLOCK();
+  return 1;
+}
+
+/* 浅拷贝上下文（无任何 MoonBit 指针），可在任意线程执行。 */
+static void mb_fill_record(
+  struct mb_marshal_record *r,
+  uint64_t hook_id,
+  uint64_t fn_addr,
+  int32_t point,
+  uint64_t arg0,
+  uint64_t arg1,
+  uint64_t ret
+) {
+  memset(r, 0, sizeof(*r));
+  r->hook_id = hook_id;
+  r->point = (uint8_t)point;
+  r->depth = mb_depth;
+  r->thread_id = mb_thread_id();
+  r->fn_addr = fn_addr;
+  r->argc = MB_CTX_MAX_ARGS;
+  r->args[0] = arg0;
+  r->args[1] = arg1;
+  r->has_ret = (point == MB_POINT_LEAVE) ? 1 : 0;
+  r->ret = ret;
+}
+
+/* owner 线程派发泵（Gum::pump_callbacks 的 C 侧）：出队并**只在调用本函数的线程**执行
+ * MoonBit 闭包。返回 >= 0 = 本次派发条数；< 0 = 错误码取负（-5 未初始化 / -6 参数非法）。
+ * 摘除/关闭竞态语义：钩子已注销或胶水已销毁的滞留事件安全丢弃（mb_marshal_dropped 计数），
+ * 绝不调用已释放闭包。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_marshal_drain(int32_t max_events) {
+  int32_t delivered = 0;
+  if (max_events <= 0) {
+    return -MB_ERR_BUFFER;
+  }
+  if (mb_state != MB_ST_ACTIVE) {
+    return -MB_ERR_NOT_INITIALIZED;
+  }
+  while (delivered < max_events) {
+    struct mb_marshal_record r;
+    struct mb_ctx saved;
+    int32_t saved_depth;
+    mb_closure_fn cb = NULL;
+    void *closure = NULL;
+    if (!mb_marshal_dequeue(&r)) {
+      break;
+    }
+    if (r.source == MB_MARSHAL_SRC_GLUE) {
+      int32_t i;
+      for (i = 0; i < MB_MAX_GLUES; i++) {
+        if (mb_glues[i].live && mb_glues[i].hook_id == r.hook_id) {
+          cb = mb_glues[i].cb;
+          closure = mb_glues[i].closure;
+          break;
+        }
+      }
+    } else {
+      struct mb_hook *h = mb_find_hook(r.hook_id);
+      if (h != NULL) {
+        cb = h->cb;
+        closure = h->closure;
+      }
+    }
+    if (cb == NULL || closure == NULL) {
+      mb_marshal_dropped++; /* 摘除/关闭竞态：滞留事件安全丢弃 */
+      continue;
+    }
+    saved = mb_ctx;
+    saved_depth = mb_depth;
+    memset(&mb_ctx, 0, sizeof(mb_ctx));
+    mb_ctx.active = 1;
+    mb_ctx.point = r.point;
+    mb_ctx.depth = r.depth;
+    mb_ctx.thread_id = r.thread_id;
+    mb_ctx.fn_addr = r.fn_addr;
+    mb_ctx.argc = r.argc;
+    mb_ctx.args[0] = r.args[0];
+    mb_ctx.args[1] = r.args[1];
+    mb_ctx.has_ret = r.has_ret;
+    mb_ctx.ret = r.ret;
+    mb_depth = r.depth + 1;
+    cb(closure); /* MoonBit 闭包唯一执行点：owner 线程（drain 调用方） */
+    mb_depth = saved_depth;
+    mb_ctx = saved;
+    delivered++;
+  }
+  return delivered;
+}
+
+/* ===================== listener vtable 胶水（接口预留，不链接真实二进制） ===================== */
+
+/* 真实 GObject 胶水契约（G1→G2 解禁后实现）：class_init/instance_init 注册
+ * on_enter/on_leave 两个 vtable 槽；槽函数由**被钩线程**调用，唯一职责是把
+ * GumInvocationContext 浅拷贝入 marshal 队列，绝不直接执行 MoonBit 闭包、
+ * 绝不阻塞、绝不保存栈上指针（ADR-0009 决策 4）。本 stub 按同一契约模拟。 */
+
+static struct mb_listener_glue *mb_find_live_glue(void *handle) {
+  int32_t i;
+  for (i = 0; i < MB_MAX_GLUES; i++) {
+    if (mb_glues[i].live && (void *)&mb_glues[i] == handle) {
+      return &mb_glues[i];
+    }
+  }
+  return NULL;
+}
+
+/* 创建 vtable 胶水并绑定 hook；`#owned(closure)`：无论成败均由本函数负责释放。 */
+MOONBIT_FFI_EXPORT
+void *mb_gum_listener_glue_create(uint64_t hook_id, mb_closure_fn cb, void *closure) {
+  int32_t i;
+  if (mb_state != MB_ST_ACTIVE || cb == NULL || mb_find_hook(hook_id) == NULL) {
+    if (closure != NULL) {
+      moonbit_decref(closure);
+    }
+    return NULL;
+  }
+  for (i = 0; i < MB_MAX_GLUES; i++) {
+    if (!mb_glues[i].live) {
+      mb_glues[i].live = 1;
+      mb_glues[i].hook_id = hook_id;
+      mb_glues[i].cb = cb;
+      mb_glues[i].closure = closure;
+      return (void *)&mb_glues[i];
+    }
+  }
+  if (closure != NULL) {
+    moonbit_decref(closure);
+  }
+  return NULL;
+}
+
+/* vtable on_enter 槽（被钩线程调用）：只入队，不执行闭包。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_listener_glue_on_enter(void *handle, uint64_t arg0, uint64_t arg1) {
+  struct mb_listener_glue *g;
+  struct mb_marshal_record r;
+  if (mb_state != MB_ST_ACTIVE) {
+    return MB_ERR_NOT_INITIALIZED;
+  }
+  g = mb_find_live_glue(handle);
+  if (g == NULL) {
+    return MB_ERR_GENERIC;
+  }
+  {
+    struct mb_hook *h = mb_find_hook(g->hook_id);
+    mb_fill_record(&r, g->hook_id, h != NULL ? h->fn_addr : 0, MB_POINT_ENTER, arg0, arg1, 0);
+  }
+  r.source = MB_MARSHAL_SRC_GLUE;
+  return mb_marshal_enqueue(&r);
+}
+
+/* vtable on_leave 槽（被钩线程调用）：只入队，不执行闭包。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_listener_glue_on_leave(void *handle, uint64_t arg0, uint64_t arg1, uint64_t ret) {
+  struct mb_listener_glue *g;
+  struct mb_marshal_record r;
+  if (mb_state != MB_ST_ACTIVE) {
+    return MB_ERR_NOT_INITIALIZED;
+  }
+  g = mb_find_live_glue(handle);
+  if (g == NULL) {
+    return MB_ERR_GENERIC;
+  }
+  {
+    struct mb_hook *h = mb_find_hook(g->hook_id);
+    mb_fill_record(&r, g->hook_id, h != NULL ? h->fn_addr : 0, MB_POINT_LEAVE, arg0, arg1, ret);
+  }
+  r.source = MB_MARSHAL_SRC_GLUE;
+  return mb_marshal_enqueue(&r);
+}
+
+/* 销毁胶水并成对释放 #owned 闭包（重复销毁返回错误码，不二次释放）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_listener_glue_destroy(void *handle) {
+  struct mb_listener_glue *g = mb_find_live_glue(handle);
+  if (g == NULL) {
+    return MB_ERR_GENERIC;
+  }
+  if (g->closure != NULL) {
+    moonbit_decref(g->closure);
+    g->closure = NULL;
+  }
+  g->cb = NULL;
+  g->live = 0;
+  return MB_GUM_OK;
+}
+
 /* ===================== 测试缝（仅供 _wbtest 触发/断言） ===================== */
 
 /* 模拟「被钩函数被调用」：填充当前上下文后按 (cb, closure) 对触发回调。 */
@@ -696,4 +1015,195 @@ int32_t mb_gum_test_closure_rc(uint64_t hook_id) {
     return -1;
   }
   return Moonbit_rc_count(Moonbit_object_header(h->closure));
+}
+
+/* 模拟「被钩线程触发调用」的 marshal 路径：只入队、不执行 MoonBit 闭包。
+ * 模拟的是未来 GObject listener 胶水 on_enter/on_leave 的被钩线程行为。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_fire_marshal(
+  uint64_t hook_id,
+  int32_t point,
+  uint64_t arg0,
+  uint64_t arg1,
+  uint64_t ret
+) {
+  struct mb_hook *h;
+  struct mb_marshal_record r;
+  if (mb_state != MB_ST_ACTIVE) {
+    return MB_ERR_NOT_INITIALIZED;
+  }
+  if (point != MB_POINT_ENTER && point != MB_POINT_LEAVE) {
+    return MB_ERR_BUFFER;
+  }
+  h = mb_find_hook(hook_id);
+  if (h == NULL || h->cb == NULL || h->closure == NULL) {
+    return MB_ERR_GENERIC;
+  }
+  mb_fill_record(&r, hook_id, h->fn_addr, point, arg0, arg1, ret);
+  r.source = MB_MARSHAL_SRC_HOOK;
+  return mb_marshal_enqueue(&r);
+}
+
+/* ---- 多线程入队测试缝（真实 OS 线程；每线程各自入队 per_thread 条后 join） ---- */
+
+#define MB_MAX_SPAWN_THREADS 8
+#define MB_MAX_SPAWN_PER_THREAD 32
+
+struct mb_spawn_ctx {
+  uint64_t hook_id;
+  uint64_t tag;
+  int32_t thread_index;
+  int32_t per_thread;
+  int32_t enqueued;
+};
+
+static void mb_spawn_one(struct mb_spawn_ctx *c) {
+  int32_t seq;
+  for (seq = 0; seq < c->per_thread; seq++) {
+    struct mb_marshal_record r;
+    int32_t point = (seq % 2 == 0) ? MB_POINT_ENTER : MB_POINT_LEAVE;
+    uint64_t ret = (point == MB_POINT_LEAVE)
+                     ? (c->tag * 100000ULL + (uint64_t)seq)
+                     : 0;
+    struct mb_hook *h = mb_find_hook(c->hook_id);
+    mb_fill_record(
+      &r,
+      c->hook_id,
+      h != NULL ? h->fn_addr : 0,
+      point,
+      (uint64_t)c->thread_index,
+      (uint64_t)seq,
+      ret
+    );
+    r.source = MB_MARSHAL_SRC_HOOK;
+    if (mb_marshal_enqueue(&r) == MB_GUM_OK) {
+      c->enqueued++;
+    }
+  }
+}
+
+#ifdef _WIN32
+static DWORD WINAPI mb_spawn_thread(LPVOID p) {
+  mb_spawn_one((struct mb_spawn_ctx *)p);
+  return 0;
+}
+#else
+static void *mb_spawn_thread(void *p) {
+  mb_spawn_one((struct mb_spawn_ctx *)p);
+  return NULL;
+}
+#endif
+
+/* 创建 threads 个真实 OS 线程并发入队（每线程 per_thread 条，args = (thread_index, seq)，
+ * Leave 带 ret = tag*100000+seq），全部 join 后返回总入队条数；< 0 = 错误码取负。
+ * 并发口径：多线程真实并发写同一 marshal 队列；派发仍收敛 owner 线程（drain）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_spawn_firers(
+  int32_t threads,
+  int32_t per_thread,
+  uint64_t hook_id,
+  uint64_t tag
+) {
+  struct mb_spawn_ctx ctx[MB_MAX_SPAWN_THREADS];
+  int32_t i, total = 0;
+  if (mb_state != MB_ST_ACTIVE) {
+    return -MB_ERR_NOT_INITIALIZED;
+  }
+  if (threads <= 0 || threads > MB_MAX_SPAWN_THREADS ||
+      per_thread <= 0 || per_thread > MB_MAX_SPAWN_PER_THREAD) {
+    return -MB_ERR_BUFFER;
+  }
+  {
+    struct mb_hook *h = mb_find_hook(hook_id);
+    if (h == NULL || h->cb == NULL || h->closure == NULL) {
+      return -MB_ERR_GENERIC;
+    }
+  }
+  for (i = 0; i < threads; i++) {
+    ctx[i].hook_id = hook_id;
+    ctx[i].tag = tag;
+    ctx[i].thread_index = i;
+    ctx[i].per_thread = per_thread;
+    ctx[i].enqueued = 0;
+  }
+#ifdef _WIN32
+  {
+    HANDLE handles[MB_MAX_SPAWN_THREADS];
+    for (i = 0; i < threads; i++) {
+      handles[i] = CreateThread(NULL, 0, mb_spawn_thread, &ctx[i], 0, NULL);
+      if (handles[i] == NULL) {
+        int32_t j;
+        for (j = 0; j < i; j++) {
+          WaitForSingleObject(handles[j], INFINITE);
+          CloseHandle(handles[j]);
+        }
+        return -MB_ERR_GENERIC;
+      }
+    }
+    for (i = 0; i < threads; i++) {
+      WaitForSingleObject(handles[i], INFINITE);
+      CloseHandle(handles[i]);
+    }
+  }
+#else
+  {
+    pthread_t tids[MB_MAX_SPAWN_THREADS];
+    for (i = 0; i < threads; i++) {
+      if (pthread_create(&tids[i], NULL, mb_spawn_thread, &ctx[i]) != 0) {
+        int32_t j;
+        for (j = 0; j < i; j++) {
+          pthread_join(tids[j], NULL);
+        }
+        return -MB_ERR_GENERIC;
+      }
+    }
+    for (i = 0; i < threads; i++) {
+      pthread_join(tids[i], NULL);
+    }
+  }
+#endif
+  for (i = 0; i < threads; i++) {
+    total += ctx[i].enqueued;
+  }
+  return total;
+}
+
+/* 当前 marshal 队列深度（任意线程可查；测试缝）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_marshal_pending(void) {
+  return mb_marshal_count;
+}
+
+/* 队列溢出与「滞留事件丢弃」累计计数（测试缝）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_marshal_dropped(void) {
+  return mb_marshal_dropped;
+}
+
+/* 当前线程 id（断言「MoonBit 闭包只在 owner 线程执行」用；测试缝）。 */
+MOONBIT_FFI_EXPORT
+uint64_t mb_gum_test_current_thread_id(void) {
+  return mb_thread_id();
+}
+
+/* 存活 listener 胶水数（create/destroy 成对性断言；测试缝）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_live_glues(void) {
+  int32_t i, n = 0;
+  for (i = 0; i < MB_MAX_GLUES; i++) {
+    if (mb_glues[i].live) {
+      n++;
+    }
+  }
+  return n;
+}
+
+/* 胶水持有的 #owned 闭包引用计数（成对释放断言；测试缝；未存活返回 -1）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_glue_closure_rc(void *handle) {
+  struct mb_listener_glue *g = mb_find_live_glue(handle);
+  if (g == NULL || g->closure == NULL) {
+    return -1;
+  }
+  return Moonbit_rc_count(Moonbit_object_header(g->closure));
 }

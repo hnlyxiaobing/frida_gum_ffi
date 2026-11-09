@@ -83,7 +83,10 @@ pub fn Gum::close(self : Gum) -> Unit raise GumError {
 }
 
 ///|
-/// 按符号挂 hook；`on_enter` / `on_leave` 均在被钩线程同步执行，回调内禁止阻塞与跨线程 JNI。
+/// 按符号挂 hook。回调经 **E1 marshal** 派发（见 `E1-CALLBACK-THREAD-SAFETY.md`）：
+/// 被钩线程只把调用上下文浅拷贝入队，`on_enter` / `on_leave` **不在被钩线程执行**，
+/// 而在 owner 线程调用 `Gum::pump_callbacks` 时执行、可重入（`depth` 为被钩线程观测深度）；
+/// 回调内禁止阻塞与跨线程 JNI。
 ///
 /// 回调桥（见 DECISIONS.md「回调桥设计」）：无捕获适配器 `invoke_closure`（`FuncRef`）+ 捕获用户回调的
 /// `#owned` 闭包二元组传 C 侧；detach 时由 stub `moonbit_decref` 成对释放。
@@ -140,6 +143,33 @@ pub fn Gum::attach(
     raise GumError::AttachFailed(st3, "interceptor 事务提交失败")
   }
   hook_id
+}
+
+///|
+/// 派发（pump）已 marshal 的回调事件：出队并在**本线程**执行 `on_enter` / `on_leave`
+/// 闭包，返回本次派发条数。
+///
+/// - 线程：**必须在 owner 线程（初始化并使用本库的线程）调用**；被钩线程只入队不执行
+///   MoonBit 闭包（E1 marshal，见 `E1-CALLBACK-THREAD-SAFETY.md`）。可重入：派发中入队的
+///   新事件可在同一次 pump 中继续派发，直至 `max_events` 用尽或队列为空。
+/// - 参数：`max_events > 0` 为单次派发上限；`<= 0` 视为参数非法。
+/// - 错误：`CallbackBridgeFailed`（参数非法）；运行时已关闭 → `NotInitialized`。
+/// - 关闭竞态：detach / close 后滞留的未派发事件被安全丢弃（不悬挂、不二次释放），
+///   不会在派发时执行已释放闭包。
+pub fn Gum::pump_callbacks(
+  _self : Gum,
+  max_events : Int32,
+) -> Int32 raise GumError {
+  let ret = mb_gum_marshal_drain(max_events)
+  if ret >= 0 {
+    return ret
+  }
+  if ret == -5 {
+    raise GumError::NotInitialized
+  }
+  raise GumError::CallbackBridgeFailed(
+    "pump_callbacks 的 max_events 必须为正数（\{max_events}）",
+  )
 }
 
 ///|

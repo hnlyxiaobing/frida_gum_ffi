@@ -10,7 +10,10 @@
 /// device 发现、spawn/attach、传输、QuickJS/V8 运行时属 frida-core，不在本库。
 /// Java 方法 hook 需 ART 插桩与 frida-java-bridge（Frida 17+ 不再捆绑），亦不在本库。
 ///
-/// 回调与线程总则：on_enter/on_leave 同步执行在**被钩线程**、可重入；
+/// 回调与线程总则（E1 marshal，见 E1-CALLBACK-THREAD-SAFETY.md）：on_enter/on_leave
+/// 在**被钩线程**只被浅拷贝入队（GumInvocationListener vtable 胶水契约，见
+/// `listener_glue.mbt`），**不在被钩线程执行 MoonBit 闭包**；闭包只在 owner 线程的
+/// `Gum::pump_callbacks` 派发中执行、可重入。
 /// MoonBit `FuncRef` 只能是无捕获闭包，因此回调状态（JavaVM*/global ref/attach 状态）
 /// 必须下沉到 C shim 或 `#external` 句柄，不能靠 MoonBit 闭包携带。
 /// 许可：frida-gum = wxWindows Library Licence 3.1（LGPL-2.0-or-later + 静态链接例外），

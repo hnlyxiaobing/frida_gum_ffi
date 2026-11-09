@@ -2,11 +2,15 @@
 /// ---- 私有 shim 与解析辅助（不导出，pkg.generated.mbti 不含本节符号）----
 ///
 /// shim 可见性收敛决策（见 DECISIONS.md）后，`frida_gum_ffi.mbt` 的 12 个 `mb_gum_*` 也已收敛为包私有，
-/// 与本节的 2 个私有 shim 合计 14 个 `mb_gum_*` C 声明，**全部是私有实现 ABI，非公共 API**。
+/// 与本节的私有 shim（`mb_gum_region_at` / `mb_gum_current_context` / `mb_gum_marshal_drain`）
+/// 及 `listener_glue.mbt` 的 4 个 `mb_gum_listener_glue_*` 合计 19 个 `mb_gum_*` C 声明，
+/// **全部是私有实现 ABI，非公共 API**。
 /// 本节补齐两处数据源缺口：
 ///   1. `Gum::regions` 无数据源 shim → `mb_gum_region_at`；
 ///   2. 回调闭包签名固定为 `() -> Unit`，InvocationContext 无回传通道
 ///      → `mb_gum_current_context`（stub 序列化、MoonBit 侧解析）。
+/// 另承载 E1 marshal 派发泵（见 `E1-CALLBACK-THREAD-SAFETY.md`）：
+///   3. 被钩线程只入队、owner 线程派发 → `mb_gum_marshal_drain`（`Gum::pump_callbacks` 的 C 侧）。
 /// 记录格式（小端）由 `stub/mb_gum_stub.c` 头部注释定义，两侧同构。
 
 ///|
@@ -25,6 +29,12 @@ extern "C" fn mb_gum_current_context(
   dst : FixedArray[Byte],
   capacity : Int32,
 ) -> Int32 = "mb_gum_current_context"
+
+///|
+/// owner 线程派发泵（E1 marshal）：出队已 marshal 的调用事件并在**调用本函数的线程**执行
+/// MoonBit 闭包（被钩线程绝不执行闭包）。返回 >= 0 = 派发条数，< 0 = 错误码取负
+/// （-5 未初始化，-6 参数非法）。必须在 owner 线程调用（见 `Gum::pump_callbacks`）。
+extern "C" fn mb_gum_marshal_drain(max_events : Int32) -> Int32 = "mb_gum_marshal_drain"
 
 ///|
 /// 上下文记录缓冲容量（记录为 50 字节，留出余量）。

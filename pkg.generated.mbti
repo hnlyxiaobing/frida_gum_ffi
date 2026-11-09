@@ -40,6 +40,7 @@ pub fn Gum::init() -> Self raise GumError
 pub fn Gum::memory_read(Self, UInt64, Int32) -> Bytes raise GumError
 pub fn Gum::memory_write(Self, UInt64, Bytes) -> Unit raise GumError
 pub fn Gum::modules(Self) -> Array[ModuleInfo] raise GumError
+pub fn Gum::pump_callbacks(Self, Int32) -> Int32 raise GumError
 pub fn Gum::regions(Self) -> Array[MemoryRegion] raise GumError
 
 #external
