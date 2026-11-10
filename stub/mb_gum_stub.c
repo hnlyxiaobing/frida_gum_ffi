@@ -344,6 +344,9 @@ static void mb_reset_world(void) {
     mb_sim_mem[i] = (uint8_t)(i & 0xFF);
   }
   for (i = 0; i < MB_MAX_HOOKS; i++) {
+    if (mb_hooks[i].closure != NULL) {
+      moonbit_decref(mb_hooks[i].closure);
+    }
     mb_hooks[i].active = 0;
     mb_hooks[i].closure = NULL;
     mb_hooks[i].cb = NULL;
@@ -557,7 +560,8 @@ int32_t mb_gum_memory_read(uint64_t address, uint8_t *dst, int32_t length) {
     return MB_ERR_NOT_INITIALIZED;
   }
   if (address < MB_SIM_MEM_BASE ||
-      address + (uint64_t)length > MB_SIM_MEM_BASE + MB_SIM_MEM_SIZE) {
+      (uint64_t)length > MB_SIM_MEM_SIZE ||
+      address - MB_SIM_MEM_BASE > MB_SIM_MEM_SIZE - (uint64_t)length) {
     return MB_ERR_INVALID_ADDRESS;
   }
   memcpy(dst, &mb_sim_mem[address - MB_SIM_MEM_BASE], (size_t)length);
@@ -573,7 +577,8 @@ int32_t mb_gum_memory_write(uint64_t address, uint8_t *src, int32_t length) {
     return MB_ERR_NOT_INITIALIZED;
   }
   if (address < MB_SIM_MEM_BASE ||
-      address + (uint64_t)length > MB_SIM_MEM_BASE + MB_SIM_MEM_SIZE) {
+      (uint64_t)length > MB_SIM_MEM_SIZE ||
+      address - MB_SIM_MEM_BASE > MB_SIM_MEM_SIZE - (uint64_t)length) {
     return MB_ERR_INVALID_ADDRESS;
   }
   memcpy(&mb_sim_mem[address - MB_SIM_MEM_BASE], src, (size_t)length);
@@ -600,7 +605,7 @@ int32_t mb_gum_module_at(void *modules, int32_t index, uint8_t *dst, int32_t cap
   if (mb_state != MB_ST_ACTIVE) {
     return MB_ERR_NOT_INITIALIZED;
   }
-  if (modules == NULL || !mb_modules_live) {
+  if (modules == NULL || modules != (void *)&mb_modules_token || !mb_modules_live) {
     return MB_ERR_GENERIC;
   }
   if (index < 0 || index >= MB_MODULE_COUNT) {

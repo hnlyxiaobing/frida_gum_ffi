@@ -570,3 +570,18 @@ test "shim 缓冲容量校验（缓冲不足）" {
   assert_true(r is Err(GumError::MemoryReadFailed(_, _)))
   g.close()
 }
+
+///|
+/// 地址+len 整数回绕不得绕过边界检查（P1 回归）。
+test "memory read/write address wraparound rejected" {
+  let g = Gum::init()
+  let buf : FixedArray[Byte] = FixedArray::make(16, b'\x00')
+  // address = UINT64_MAX, length = 1: old check wraps address+length to 0
+  assert_eq(mb_gum_memory_read(0xFFFFFFFFFFFFFFFFUL, buf, 1), 7)
+  assert_eq(mb_gum_memory_write(0xFFFFFFFFFFFFFFFFUL, b"\x00", 1), 7)
+  // address just below base
+  assert_eq(mb_gum_memory_read(0x0FFFFFFFFFFFFFFFUL, buf, 1), 7)
+  // valid range still works
+  assert_eq(mb_gum_memory_read(0x10000000UL, buf, 16), 0)
+  g.close()
+}
