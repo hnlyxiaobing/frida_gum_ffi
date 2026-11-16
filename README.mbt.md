@@ -1,12 +1,7 @@
 # hnlyxiaobing/frida_gum_ffi
 
-> 2026-11-07。本包有 4 个 `#external` 句柄、14 个 `mb_gum_*` `extern "C"` shim 声明（**全部包私有 · 私有实现 ABI，非公共 API**；其中 12 个已由 `pub` 收敛，不再出现在 `moon info` 快照）、回调/所有权规则、值类型与 8 个**已实现**的 `Gum::*` API（桌面 stub）。`moon check --deny-warn`：0 error 0 warn；`moon test`：**4/4 通过**（1 黑盒 + 3 白盒）。
+为 Frida Gum 提供进程内插桩的最小 MoonBit FFI 面；在许可门禁解除前只用桌面 stub 验证接口与线程模型。
 
-frida-gum 进程内插桩的 C-FFI 封装；不含 frida-core、不做 Java 方法 hook。`preferred_target = "native"`（理由见 `docs/DECISIONS.md`）。
+本包是独立发布单元。完整说明（能力边界、公开 API、依赖、验证、风险与未决）见本仓库 `README.md`；公开签名以 `pkg.generated.mbti` 为准。
 
-> **实现门禁（见 `docs/DECISIONS.md`「G1 / G2 双门禁」）**：许可审查 G1 + 更小替代评估 G2 通过前**不链接真实 frida-gum devkit**（门禁保持开放；仅链接自带 `stub/mb_gum_stub.c`，不下载 devkit）。
-> `Gum::close` / `Gum::detach`：**不会二次释放，重复调用返回明确错误**（重复 close → `NotInitialized`；重复 detach → `DetachFailed`，已关闭 → `NotInitialized`）。
-
-完整文档见项目根目录与 `docs/` 目录：`README.md`、`docs/DESIGN.md`、`docs/API.md`、`docs/DECISIONS.md`（设计决策与门禁状态）、`docs/LICENSE-AUDIT.md`（许可盘点）。
-
-**当前状态：桌面 stub 实现 + 4 测试全过，五项门禁（clean / check --deny-warn / build / test / fmt --check）全绿；真实实现等 G1/G2 门禁放行。**
+许可：Apache-2.0。

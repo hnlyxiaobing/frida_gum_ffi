@@ -1,66 +1,66 @@
-# hnlyxiaobing/frida_gum_ffi
+# frida_gum_ffi · Frida Gum 插桩封装
 
-**frida-gum 插桩核心的 C-FFI 封装 —— 为 MoonBit 程序提供函数 hook、内存读写与模块枚举能力。**
+> 独立发布单元 ｜ L2 动态验证 ｜ `preferred_target = native` ｜ Apache-2.0
+> 状态：`moon test` **12/12** 通过（2026-11-11 本机实测）；本文件是本仓库**唯一**说明文档。
+> 公开 API 以 `pkg.generated.mbti` 为准（由 `moon info` 生成，禁手工编辑）；加法性变更须登记簿记 + 快照审阅 + 快照门禁。
 
-> 状态（2026-11-09，R4）：**桌面 stub 实现已落地**（`stub/mb_gum_stub.c` 模拟 interceptor 表 / 内存区 / 模块与区间表），`Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}` 8 个 API 均已实现，`moon test` **11/11 全过**（1 黑盒 + 10 白盒，含 R4 E1 marshal 并发/重入/关闭竞态），`moon clean` / `moon check --deny-warn` / `moon build` / `moon test` / `moon fmt --check` 五项门禁全绿。12 个 `mb_gum_*` C shim 已由 `pub` 收敛为**包私有**（私有实现 ABI，非公共 API，不再出现在 `moon info` 快照）。
-> **R4 门禁状态**：E1（被钩线程闭包线程安全）= marshal 设计 + 本地并发测试绿，Linux pthread 原实验 [仍需实测]（见 `docs/E1-CALLBACK-THREAD-SAFETY.md`）；**G1 许可 = 事实层 15/15 组件清单已固化、法务/用户终裁未闭环（门禁未通过）**（见 `docs/LICENSE-AUDIT-G1.md`）；G2 = MIT/Apache 替代方案评估已登记（见 `docs/G2-ALTERNATIVES-EVAL.md`），**未获取/落盘/链接任何 devkit 或源码包**。
-> `preferred_target` 已由 `wasm` 改为 `native`（唯一配置改动，理由见 `docs/DECISIONS.md`「`preferred_target = "native"`」）。
-> **实现门禁（见 `docs/DECISIONS.md`「G1 / G2 双门禁」）**：**真实 frida-gum devkit 链接仍不进入实现候选**，须先通过「G1 许可审查 + G2 更小替代方案评估」两道门禁（当前保持开放）；当前只链接自带桌面 stub，不下载/引入任何 devkit。
+## 1. 定位与边界
 
-## 定位与为什么存在
+为 Frida Gum 提供进程内插桩的最小 MoonBit FFI 面；在许可门禁解除前只用桌面 stub 验证接口与线程模型。
 
-**成本判定**（2026-11-06 检索 mooncakes.io，`frida` / `gum` / `ptrace` 关键词均无可用包）：MoonBit C-FFI 已足够强（`extern "C"`、`#external`、`FuncRef`、`#borrow/#owned`、`native-stub`），frida-gum 是 C 库，绑定在语言层面可行。但真正的成本在**回调桥接、线程安全与许可**，不在语言能力（背景与决策见 `docs/DECISIONS.md`）。
+**能力**
 
-**三处常见误解的更正**（开发期核对结论，许可细节与证据等级见 `docs/LICENSE-AUDIT.md`）：
+- `Gum` 九个方法（含 `pump_callbacks`）与 `InstrumentationBackend` trait 三方法
+- 15 个活跃包私有 `mb_gum_*` shim（含 `mb_gum_marshal_drain`），`.mbti` 导出 0 个
+- 回调线程安全：被钩线程只入队，owner 线程 `pump_callbacks` 派发（队列容量 256，满则丢弃计数）
+- `GumError` 13 构造，含 `LicenseReviewRequired` / `PtraceDenied` 两个门禁可观察信号
 
-1. **许可**：frida-gum 与 frida-core 的 `COPYING` **主体一致**，均为 **wxWindows Library Licence 3.1**（LGPL-2.0-or-later + `EXCEPTION NOTICE` 第 2 条静态链接例外），不是「LGPL/wxWindows 混合」；但非逐字相同——gum 的 `COPYING`（5696B）另附第三方 BSD-3-Clause 片段声明（Mozilla/Closure/regenerator 三段版权与免责声明），core 的（2416B）无附录（详见 `docs/LICENSE-AUDIT.md`）。但 15 个 `subprojects/*.wrap` 上游组件许可待核，且静态链接进闭源 App 的解读须法务复核（两项均未决，见 `docs/DESIGN.md` §12 风险与待验证）。
-2. **能力边界**：gum 只做进程内插桩；设备发现 / spawn-attach / 传输 / QuickJS-V8 运行时属 **frida-core**；Java 方法 hook 需 ART 插桩 + `frida-java-bridge`，且 **Frida 17.0.0 起 bridges 不再捆绑**。本库单独做不到 Java hook。
-3. **更小替代**：ShadowHook / bhook / xHook / Dobby / And64InlineHook 均为 MIT 或 Apache-2.0、免 root、体积远小于 gum devkit。
+**非目标**
 
-## 能力范围 / 非目标
+- 不获取/落盘 gum devkit 或源码包（G1 闭环前禁止）
+- 不做 Java hook、不假定 root；不与 `ptrace_lite` 互相 import
 
-- **做**：`gum_init_embedded` / `deinit_embedded`、Interceptor 事务、`attach` / `detach`、`on_enter` / `on_leave` 回调注册、进程内存读写、模块与内存区间枚举。
-- **不做**：设备发现 / 注入 / 传输 / 脚本运行时（frida-core）、Java 方法 hook（ART bridge）、Stalker 指令跟踪（当前不声明）、符号解析（配 `dwarfscope`）、断点管理。
-- 与 `ptrace_lite` **互斥备选、零互相 import**，由组合根二选一（见 `docs/DECISIONS.md`「与 `ptrace_lite` 互斥备选」）。
+## 2. 关键设计决策（本仓库自足记录）
 
-## 公开接口（速览）
+- 延后 devkit，设 G1（许可）+ G2（更小替代）双门禁；frida-gum 许可为 **wxWindows Library Licence 3.1**。
+- G1 事实层已完成 15/15 个 `subprojects/*.wrap` 组件许可清单（libdwarf 的 `dwarfdump/` 为 GPL-2 隐患、libsoup 钉定树 LGPL v2、xz 0BSD、sqlite 公有领域），**法务终裁未取得，G1 未通过**；G2 设计侧评估已登记、真实链接验证未做。
+- 回调不在被钩线程执行 MoonBit 闭包（设计不变量 I1–I6）；`#owned` 闭包在 detach/close 成对 decref。
+- `GumState` 仅 `Initialized`；`preferred_target = native`。
 
-`Gum::{init, close, attach, detach, memory_read, memory_write, modules, regions}`（均已实现，桌面 stub）。外部句柄清单见 `docs/API.md`；12 个 `mb_gum_*` C shim 为**包私有的私有实现 ABI，非公共 API**，只能经 `Gum::*` 使用。
+## 3. 公开 API 索引（自动抽取 `pkg.generated.mbti` 的 `pub` 声明行；完整字段见快照）
 
-生命周期统一措辞：**`Gum::close` / `Gum::detach` 不会二次释放，重复调用返回明确错误**（重复 close → `NotInitialized`；重复 detach → `DetachFailed`，运行时已关闭 → `NotInitialized`）。
+```text
+pub(all) struct Gum {
+pub fn Gum::attach(Self, Bytes, (InvocationContext) -> Unit, (InvocationContext) -> Unit) -> UInt64 raise GumError
+pub fn Gum::close(Self) -> Unit raise GumError
+pub fn Gum::detach(Self, UInt64) -> Unit raise GumError
+pub fn Gum::init() -> Self raise GumError
+pub fn Gum::memory_read(Self, UInt64, Int32) -> Bytes raise GumError
+pub fn Gum::memory_write(Self, UInt64, Bytes) -> Unit raise GumError
+pub fn Gum::modules(Self) -> Array[ModuleInfo] raise GumError
+pub fn Gum::pump_callbacks(Self, Int32) -> Int32 raise GumError
+pub fn Gum::regions(Self) -> Array[MemoryRegion] raise GumError
+pub(all) enum GumState {
+pub(all) struct InvocationContext {
+pub(all) struct MemoryProtection {
+pub(all) struct MemoryRegion {
+pub(all) struct ModuleInfo {
+pub(all) enum PointCut {
+```
 
-## 依赖
+## 4. 依赖、平台与许可
 
-- **当前依赖**：零第三方依赖；只链接自带 `stub/mb_gum_stub.c` 桌面 stub，**不下载、不链接 frida-gum devkit**。独立 `moon.mod`，五项门禁独立通过。
-- 门禁通过后的后续阶段：Frida releases 的 `libfrida-gum.a` devkit（16.x arm64 约 9–16 MB）、GObject `GumInvocationListener` vtable 胶水。
+零第三方依赖（仅 `stub/mb_gum_stub.c`）；`preferred_target = native`；Apache-2.0。
 
-## 平台与许可风险
+## 5. 命令行与验证
 
-| 风险 | 说明 |
-|---|---|
-| **许可（G1 门禁）** | wxWindows 3.1 例外第 2 条允许以自有条款分发静态链接二进制，但 15 个上游 `.wrap` 组件许可未逐项核对；法律解读高度版本/辖区相关，须法务复核 |
-| **更小替代（G2 门禁）** | 必须至少评估 ShadowHook(MIT, 免 root, API 16–37) / bhook / xHook 之一，并说明为何 gum 仍必需；若替代够用则注销本库实现任务 |
-| 平台 | `preferred_target = "native"`；Linux x86-64 桌面可验证；Android 需 root 或 `PTRACE_ATTACH` 权限 |
-| 部署 | 官方排错文档明确 root / `kernel.yama.ptrace_scope=0`；W^X / SELinux 对 `mprotect(PROT_WRITE|PROT_EXEC)` 的限制来自技术博客，**待实测**（见 `docs/DESIGN.md` §12 风险与待验证） |
-| 线程 | `on_enter`/`on_leave` 同步跑在**被钩线程**、可重入；MoonBit 运行时在该线程执行闭包的线程安全**未实测**（最高优先待验证项，见 `docs/DESIGN.md` §12） |
-| 体积 | devkit 数 MB；`[待验证假设]` 17.25.2 gum devkit 实际尺寸（见 `docs/DESIGN.md` §12） |
+- `cmd/main` 为模板 demo（init → modules/regions → memory → detach → close），非发布 CLI。
+- 复验：`moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check` → `moon info` 后检查 `pkg.generated.mbti` 无意外 diff。
+- 本仓库为独立 Git 仓库，文档与 CI 均自包含，不依赖工作区其他目录。
 
-## 测试与验收
+## 6. 风险与未决
 
-- **测试策略**：当前为桌面 stub 全链路（init → attach → memory 读写回环 → modules/regions → detach → close）、回调重入与事务配平、闭包引用计数成对、缓冲容量校验、许可/ptrace 门禁可观察路径；G1/G2 通过后的真实实现阶段再做 x86-64 Linux hook libc、Android arm64 入口 hook 与许可清单核对。
-- **验收标准**（真实实现阶段，门禁通过后）：hook 生效且 detach 无悬挂；许可审查通过；回调线程安全实测通过。
-- **门禁实跑（2026-11-09）**：`moon clean` → `moon check --deny-warn` → `moon build` → `moon test` → `moon fmt --check` 全部 exit 0；`moon test` 输出 `Total tests: 11, passed: 11, failed: 0`（R4 新增 7 条 E1 marshal 测试；测试数只增不减）。
+- G1 法务终裁与 G2 真实链接验证均未闭环，本库不得进入真实对接。
+- E1 原 Linux pthread 直调实验在本机 Windows 未实测。
+- 更小替代（ShadowHook / bhook / xHook）评估显示仍缺 `GumInvocationListener` 等价物，但 G2 最终选型待真实验证后裁决。
 
-## 当前状态 / 产物
-
-| 项 | 状态 |
-|---|---|
-| `frida_gum_ffi.mbt`：`#external` 句柄 ×4、`mb_gum_*` shim ×14（**全部包私有**，其中 12 个已由 `pub` 收敛）、`Gum::*` API ×8（已实现） | ✅ |
-| `GumState` 收紧（死分支收紧决策，见 `docs/DECISIONS.md`）：仅 `Initialized`，死分支 `Uninitialized`/`Attached`/`Closed` 已删 | ✅ |
-| `pkg.generated.mbti` API 快照 | ✅ 已同步为新导出面（**0 个 `mb_gum_*`**、`GumState` 仅 `Initialized`）；由 `moon check` 自动再生成，未手工编辑 |
-| devkit 链接 / GObject 胶水 / 真实 gum 运行时 / 许可审查（G1/G2） | ❌ 后续阶段（门禁保持开放） |
-| 五项门禁（clean / check --deny-warn / build / test / fmt --check） | ✅ 全部 exit 0，11/11 测试通过 |
-
-## 文档索引
-
-`docs/DESIGN.md`（设计契约）· `docs/API.md`（公开接口）· `docs/DECISIONS.md`（设计决策与门禁状态）· `docs/LICENSE-AUDIT.md`（许可盘点与合规含义）· `docs/LICENSE-AUDIT-G1.md`（R4：15 组件逐项清单）· `docs/E1-CALLBACK-THREAD-SAFETY.md`（R4：marshal 不变量与实验方案）· `docs/G2-ALTERNATIVES-EVAL.md`（R4：MIT 替代方案评估）。本文档集自足，不依赖仓库外文件。
