@@ -69,6 +69,67 @@ test "错误变体触发补齐（W2：DevkitNotFound / ModuleEnumerateFailed）"
 }
 
 ///|
+/// W3 地址 hook 全链路 + trait 派发等价（选项 A）：attach_address 回调保真、
+/// 未知/重复地址错误显式断言、跨入口重复挂接拒绝、trait 三方法与公开 API 逐字节等价。
+test "地址 hook 与 trait 派发（W3）" {
+  let g = Gum::init()
+  let events : Array[String] = []
+  let enter = fn(ctx : InvocationContext) {
+    events.push(
+      "enter:\{ctx.function_address}:\{ctx.args.length()}:\{ctx.args[0]}:",
+    )
+  }
+  let leave = fn(ctx : InvocationContext) {
+    events.push("leave:\{ctx.function_address}")
+  }
+  // target_add 的 stub 世界地址 0x140000100
+  let hook_id = g.attach_address(0x140000100, enter, leave)
+  assert_true(hook_id != 0)
+  assert_eq(mb_gum_test_live_hooks(), 1)
+  assert_eq(mb_gum_test_closure_rc(hook_id), 1)
+  assert_eq(mb_gum_test_fire(hook_id, 1, 7, 8, 0), 0)
+  assert_eq(mb_gum_test_fire(hook_id, 2, 7, 8, 15), 0)
+  assert_eq(events.length(), 2)
+  assert_eq(events[0], "enter:5368709376:2:7:") // 0x140000100 十进制，上下文保真
+  assert_eq(events[1], "leave:5368709376")
+  // 未知地址 → UnknownSymbol（十进制地址串）
+  let r_unknown = Ok(g.attach_address(0x999, enter, leave)) catch {
+    e => Err(e)
+  }
+  match r_unknown {
+    Err(GumError::UnknownSymbol(s)) => assert_eq(s, "2457")
+    _ => abort("attach_address(未知地址) 应返回 UnknownSymbol")
+  }
+  // 同地址重复 → AttachFailed
+  let r_dup = Ok(g.attach_address(0x140000100, enter, leave)) catch {
+    e => Err(e)
+  }
+  assert_true(r_dup is Err(GumError::AttachFailed(_, _)))
+  // 跨入口重复：符号入口挂同一符号亦拒绝（同一 hook 表）
+  let r_cross = Ok(g.attach(b"target_add", enter, leave)) catch { e => Err(e) }
+  assert_true(r_cross is Err(GumError::AttachFailed(_, _)))
+  g.detach(hook_id)
+  assert_eq(mb_gum_test_live_hooks(), 0)
+  assert_eq(mb_gum_test_live_closures(), 0)
+  // trait 派发等价：read 与 memory_read 逐字节一致
+  let backend : &InstrumentationBackend = g
+  let base : UInt64 = 0x10000000
+  let via_trait = backend.read(base, 4)
+  let via_api = g.memory_read(base, 4)
+  assert_eq(via_trait.length(), via_api.length())
+  for i in 0..<via_trait.length() {
+    assert_eq(via_trait[i], via_api[i])
+  }
+  // trait attach（nop 回调）→ detach 全链路
+  let trait_hook = backend.attach(0x140000140)
+  assert_true(trait_hook != 0)
+  assert_eq(mb_gum_test_live_hooks(), 1)
+  backend.detach(trait_hook)
+  assert_eq(mb_gum_test_live_hooks(), 0)
+  assert_eq(mb_gum_test_live_closures(), 0)
+  g.close()
+}
+
 ///|
 /// 许可门禁可观察路径（见 README §2「LicenseReviewRequired」）：门禁未过时 `Gum::init` 主动返回
 /// `LicenseReviewRequired` / `PtraceDenied` 而非静默继续；失败的 init 不消耗生命周期。

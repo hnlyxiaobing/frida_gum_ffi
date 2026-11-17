@@ -133,6 +133,31 @@ test "memory_write 失败映射冻结口径（W2 不对称双断言）" {
 }
 
 ///|
+/// W3 地址语义挂 hook 公开契约（纯加法，符号入口 `attach` 行为不变）：
+/// 合法地址挂接/摘除、未知地址 → UnknownSymbol、同地址重复 → AttachFailed。
+test "attach_address 公开契约（W3）" {
+  let g = @frida_gum_ffi.Gum::init()
+  let nop_enter = fn(_ctx : @frida_gum_ffi.InvocationContext) { () }
+  let nop_leave = fn(_ctx : @frida_gum_ffi.InvocationContext) { () }
+  let hook = g.attach_address(0x140000180, nop_enter, nop_leave) // target_swap
+  assert_true(hook != 0)
+  let r_unknown = Ok(g.attach_address(0x999, nop_enter, nop_leave)) catch {
+    e => Err(e)
+  }
+  assert_true(r_unknown is Err(@frida_gum_ffi.GumError::UnknownSymbol(_)))
+  let r_dup = Ok(g.attach_address(0x140000180, nop_enter, nop_leave)) catch {
+    e => Err(e)
+  }
+  assert_true(r_dup is Err(@frida_gum_ffi.GumError::AttachFailed(_, _)))
+  g.detach(hook)
+  // 摘除后可重新挂接（资源配平）
+  let hook2 = g.attach_address(0x140000180, nop_enter, nop_leave)
+  assert_true(hook2 != 0)
+  g.detach(hook2)
+  g.close()
+}
+
+///|
 ///|
 /// `Gum::pump_callbacks` 公开契约（E1 marshal 派发泵，见 README §2）：
 /// 空队列派发 = 0；`max_events <= 0` → `CallbackBridgeFailed`（不 panic）；

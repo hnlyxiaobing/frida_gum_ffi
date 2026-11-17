@@ -140,7 +140,7 @@ pub trait InstrumentationBackend {
 /// 符号由项目自带的桌面 stub `stub/mb_gum_stub.c` 提供，一对一模拟 gum C API 语义。
 /// 链接真实 frida-gum devkit 受 G1 许可审查 + G2 更小替代评估双门禁（见 README §2/§6）约束，当前不做。
 ///
-/// 可见性（shim 可见性收敛决策，见 docs/DECISIONS.md）：本节 12 个 `mb_gum_*` 已由 `pub` 收敛为包私有，
+/// 可见性（shim 可见性收敛决策，见 README §2）：本节 13 个 `mb_gum_*` 已由 `pub` 收敛为包私有，
 /// 仅供 `gum.mbt` / 包内白盒测试调用，**不出现在 `moon info` 快照（pkg.generated.mbti）中**。
 /// 对外唯一入口是 `gum.mbt` 的 `Gum::{init,close,attach,detach,memory_read,memory_write,modules,regions}`。
 
@@ -172,6 +172,14 @@ extern "C" fn mb_gum_attach(
   interceptor : GumInterceptorRaw,
   symbol : Bytes,
 ) -> UInt64 = "mb_gum_attach"
+
+///|
+/// W3 地址语义挂 hook：在 stub 世界符号地址表内查找（不做真实符号解析）。
+/// 与 `mb_gum_attach` 同构：同一 hook 表 / 同一错误码约定；返回 hook id（0 表示失败）。
+extern "C" fn mb_gum_attach_address(
+  interceptor : GumInterceptorRaw,
+  address : UInt64,
+) -> UInt64 = "mb_gum_attach_address"
 
 ///|
 /// 摘除 hook 并释放对应 listener 句柄。

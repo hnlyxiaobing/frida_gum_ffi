@@ -381,7 +381,18 @@ static const struct mb_symbol *mb_find_symbol(const uint8_t *name, int32_t len) 
   return NULL;
 }
 
-/* ===================== 公开 shim（docs/API.md 12 个） ===================== */
+/* W3 地址语义：在 stub 世界符号地址表内查找（不做真实符号解析）。 */
+static const struct mb_symbol *mb_find_symbol_by_addr(uint64_t addr) {
+  int32_t i;
+  for (i = 0; i < MB_SYMBOL_COUNT; i++) {
+    if (mb_symbols[i].addr == addr) {
+      return &mb_symbols[i];
+    }
+  }
+  return NULL;
+}
+
+/* ===================== 生产 shim（15 个基础 shim，见 README §3） ===================== */
 
 MOONBIT_FFI_EXPORT
 void *mb_gum_init_embedded(void) {
@@ -533,6 +544,49 @@ int32_t mb_gum_detach(void *interceptor, uint64_t hook_id) {
   }
   mb_release_hook(h); /* 释放 listener 与 #owned 闭包 */
   return MB_GUM_OK;
+}
+
+/* W3 地址语义挂 hook：与 mb_gum_attach 同构（同一 hook 表 / 同一错误码约定），
+ * 仅入口由符号名改为地址表内查找；同符号重复挂接（无论经符号还是地址入口）→ ATTACH_FAILED。 */
+MOONBIT_FFI_EXPORT
+uint64_t mb_gum_attach_address(void *interceptor, uint64_t addr) {
+  const struct mb_symbol *sym;
+  int32_t i;
+  if (interceptor != (void *)&mb_interceptor_token || mb_state != MB_ST_ACTIVE) {
+    if (mb_txn_open) {
+      mb_txn_error = MB_ERR_GENERIC;
+    }
+    return 0;
+  }
+  sym = mb_find_symbol_by_addr(addr);
+  if (sym == NULL) {
+    if (mb_txn_open) {
+      mb_txn_error = MB_ERR_UNKNOWN_SYMBOL;
+    }
+    return 0;
+  }
+  if (mb_find_hook_by_symbol(sym->name) != NULL) {
+    if (mb_txn_open) {
+      mb_txn_error = MB_ERR_ATTACH_FAILED;
+    }
+    return 0;
+  }
+  for (i = 0; i < MB_MAX_HOOKS; i++) {
+    if (!mb_hooks[i].active) {
+      mb_hooks[i].active = 1;
+      mb_hooks[i].id = mb_next_hook_id++;
+      mb_hooks[i].fn_addr = sym->addr;
+      mb_hooks[i].cb = NULL;
+      mb_hooks[i].closure = NULL;
+      strncpy(mb_hooks[i].symbol, sym->name, sizeof(mb_hooks[i].symbol) - 1);
+      mb_hooks[i].symbol[sizeof(mb_hooks[i].symbol) - 1] = '\0';
+      return mb_hooks[i].id;
+    }
+  }
+  if (mb_txn_open) {
+    mb_txn_error = MB_ERR_ATTACH_FAILED;
+  }
+  return 0;
 }
 
 MOONBIT_FFI_EXPORT

@@ -112,6 +112,47 @@ pub fn Gum::attach(
     }
     raise GumError::AttachFailed(reason, "interceptor 拒绝挂接")
   }
+  self.finish_attach(hook_id, on_enter, on_leave)
+}
+
+///|
+/// W3 地址语义挂 hook（纯加法，防火墙：`Gum::attach` 符号语义与输出不变）。
+/// 在 stub 世界符号地址表内查找（不做真实符号解析）；回调派发 / 错误映射 /
+/// 资源配平与 `Gum::attach` 完全同构（共享 `finish_attach` 尾段）。
+/// 同一符号经符号或地址入口重复挂接 → `AttachFailed`；未知地址 → `UnknownSymbol`（十进制地址串）。
+pub fn Gum::attach_address(
+  self : Gum,
+  address : Address,
+  on_enter : (InvocationContext) -> Unit,
+  on_leave : (InvocationContext) -> Unit,
+) -> HookId raise GumError {
+  let st = mb_gum_transaction(self.interceptor, 1)
+  if st != 0 {
+    if st == 5 {
+      raise GumError::NotInitialized
+    }
+    raise GumError::AttachFailed(st, "无法开启 interceptor 事务")
+  }
+  let hook_id = mb_gum_attach_address(self.interceptor, address)
+  if hook_id == 0 {
+    let reason = mb_gum_transaction(self.interceptor, 0)
+    if reason == 1 {
+      raise GumError::UnknownSymbol("\{address}")
+    }
+    raise GumError::AttachFailed(reason, "interceptor 拒绝挂接")
+  }
+  self.finish_attach(hook_id, on_enter, on_leave)
+}
+
+///|
+/// attach 共享尾段（W3 提取，行为与提取前逐字节同构）：回调桥注册 + 事务提交，
+/// 失败逆序释放（detach + 事务配平）。
+fn Gum::finish_attach(
+  self : Gum,
+  hook_id : HookId,
+  on_enter : (InvocationContext) -> Unit,
+  on_leave : (InvocationContext) -> Unit,
+) -> HookId raise GumError {
   let closure : () -> Unit = fn() {
     match make_invocation(hook_id) {
       Some(ctx) =>
@@ -274,3 +315,28 @@ pub fn Gum::regions(_self : Gum) -> Array[MemoryRegion] raise GumError {
   }
   out
 }
+
+///|
+/// ---- W3 trait 落地（纯加法：消除 trait 空转，组合根可经 trait 二选一）----
+/// trait 为地址语义（冻结签名不变）：attach 经 `attach_address` 适配，回调为 nop；
+/// 需要真实回调的调用方直接用 `Gum::attach` / `Gum::attach_address`。
+/// detach / read 直接转发同名公开方法，语义逐字节等价。
+pub impl InstrumentationBackend for Gum with fn attach(self, address) -> UInt64 raise GumError {
+  self.attach_address(address, fn(_ctx) { () }, fn(_ctx) { () })
+}
+
+///|
+pub impl InstrumentationBackend for Gum with fn detach(self, hook_id) -> Unit raise GumError {
+  self.detach(hook_id)
+}
+
+///|
+pub impl InstrumentationBackend for Gum with fn read(self, address, length) -> Bytes raise GumError {
+  self.memory_read(address, length)
+}
+
+// 显式方法提升（工具链要求，替代已弃用的隐式提升）：read 无同名固有方法，
+// 显式 extend 后 `Gum::read` 与 trait 派发等价；attach/detach 已有同名固有方法，无需提升。
+
+///|
+pub extend Gum with InstrumentationBackend::{read}

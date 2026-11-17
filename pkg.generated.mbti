@@ -34,6 +34,7 @@ pub(all) struct Gum {
   hook_count : Int32
 }
 pub fn Gum::attach(Self, Bytes, (InvocationContext) -> Unit, (InvocationContext) -> Unit) -> UInt64 raise GumError
+pub fn Gum::attach_address(Self, UInt64, (InvocationContext) -> Unit, (InvocationContext) -> Unit) -> UInt64 raise GumError
 pub fn Gum::close(Self) -> Unit raise GumError
 pub fn Gum::detach(Self, UInt64) -> Unit raise GumError
 pub fn Gum::init() -> Self raise GumError
@@ -41,7 +42,9 @@ pub fn Gum::memory_read(Self, UInt64, Int32) -> Bytes raise GumError
 pub fn Gum::memory_write(Self, UInt64, Bytes) -> Unit raise GumError
 pub fn Gum::modules(Self) -> Array[ModuleInfo] raise GumError
 pub fn Gum::pump_callbacks(Self, Int32) -> Int32 raise GumError
+pub fn Gum::read(Self, UInt64, Int32) -> Bytes raise GumError
 pub fn Gum::regions(Self) -> Array[MemoryRegion] raise GumError
+pub impl InstrumentationBackend for Gum
 
 #external
 pub type GumInterceptorRaw
