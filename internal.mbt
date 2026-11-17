@@ -9,7 +9,7 @@
 ///   1. `Gum::regions` 无数据源 shim → `mb_gum_region_at`；
 ///   2. 回调闭包签名固定为 `() -> Unit`，InvocationContext 无回传通道
 ///      → `mb_gum_current_context`（stub 序列化、MoonBit 侧解析）。
-/// 另承载 E1 marshal 派发泵（见 `docs/E1-CALLBACK-THREAD-SAFETY.md`）：
+/// 另承载 E1 marshal 派发泵（见 README §2）：
 ///   3. 被钩线程只入队、owner 线程派发 → `mb_gum_marshal_drain`（`Gum::pump_callbacks` 的 C 侧）。
 /// 记录格式（小端）由 `stub/mb_gum_stub.c` 头部注释定义，两侧同构。
 

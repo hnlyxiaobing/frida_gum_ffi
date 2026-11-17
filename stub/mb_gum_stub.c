@@ -1,12 +1,12 @@
 /*
- * frida_gum_ffi — 桌面 C shim stub（G1/G2 双门禁未通过，见 docs/DECISIONS.md；真实 devkit 禁止引入/链接/下载）。
+ * frida_gum_ffi — 桌面 C shim stub（G1/G2 双门禁未通过，见 README §2/§6；真实 devkit 禁止引入/链接/下载）。
  *
  * 本文件是**项目自带的 gum 行为模拟桩**，不是伪实现：
  *   - 模拟 interceptor 表（符号 → hook id → listener）、模拟进程内存区、模块表、内存区间表；
  *   - 使 moon build / moon test 在 Windows 桌面真实编译、链接、运行；
- *   - 「链接真实 frida-gum devkit」继续受 G1 许可审查 + G2 更小替代评估双门禁（见 docs/DECISIONS.md）约束，当前不做。
+ *   - 「链接真实 frida-gum devkit」继续受 G1 许可审查 + G2 更小替代评估双门禁（见 README §2/§6）约束，当前不做。
  *
- * 回调路径（见 docs/DECISIONS.md「回调桥设计」）：`FuncRef[(() -> Unit) -> Unit]` + `#owned closure` 二元组。
+ * 回调路径（见 README §2）：`FuncRef[(() -> Unit) -> Unit]` + `#owned closure` 二元组。
  * stub 保存 (cb, closure) 指针对：
  *   - 触发时：直接调用 cb(closure)；实测本工具链闭包参数为 borrow 约定，
  *     调用不消费引用（rc 不变），无需 incref；
@@ -26,7 +26,7 @@
  *   9  already initialized（进程内已有活跃 runtime）
  * module_at / region_at 约定：1 = 有效记录，0 = 枚举结束，其余为上述错误码。
  *
- * marshal 派发（E1「被钩线程 → owner 线程」设计，见 docs/E1-CALLBACK-THREAD-SAFETY.md）：
+ * marshal 派发（E1「被钩线程 → owner 线程」设计，见 README §2）：
  *   - 被钩线程（或模拟被钩线程的测试缝 / 未来 GObject listener 胶水）**绝不直接执行
  *     MoonBit 闭包**，只把调用上下文浅拷贝为 mb_marshal_record 入无锁外的互斥队列；
  *   - owner 线程经 mb_gum_marshal_drain 出队并在**自己线程上**执行 (cb, closure) 对；
@@ -675,7 +675,7 @@ int32_t mb_gum_region_at(int32_t index, uint8_t *dst, int32_t capacity) {
   return 1;
 }
 
-/* 回调上下文回传通道：`mb_gum_set_callbacks` 的闭包签名是 `() -> Unit`（docs/API.md 固定），
+/* 回调上下文回传通道：`mb_gum_set_callbacks` 的闭包签名是 `() -> Unit`（回调桥契约固定，见 README §2），
  * 每次触发的 InvocationContext 由此 shim 序列化给 MoonBit 侧解析。 */
 MOONBIT_FFI_EXPORT
 int32_t mb_gum_current_context(uint8_t *dst, int32_t capacity) {
