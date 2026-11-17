@@ -158,6 +158,43 @@ test "attach_address 公开契约（W3）" {
 }
 
 ///|
+/// W6 内存边界值矩阵（stub 世界：base=0x10000000，size=4096，回绕防护为减法形式）：
+/// 基址前/基址/末尾合法/越界一字节/长度 0、1、4096、4097/负长度/UINT64_MAX。
+/// 读失败 → InvalidAddress；写失败 → MemoryWriteFailed（冻结口径，见 README §2）。
+test "内存边界值矩阵（W6）" {
+  let g = @frida_gum_ffi.Gum::init()
+  let base : UInt64 = 0x10000000
+  let size : Int32 = 4096
+  // 合法域：基址 / 末尾单字节 / 全长 / 零长
+  assert_eq(g.memory_read(base, 1).length(), 1)
+  assert_eq(g.memory_read(base + 4095, 1).length(), 1)
+  assert_eq(g.memory_read(base, size).length(), size)
+  assert_eq(g.memory_read(base, 0).length(), 0)
+  g.memory_write(base + 4095, b"\x7f")
+  assert_eq(g.memory_read(base + 4095, 1)[0].to_int(), 0x7f)
+  // 非法域：基址前一字节 / 末尾越界一字节 / 超长 / UINT64_MAX
+  let u64_max : UInt64 = ((0xFFFFFFFF).to_uint64() << 32) |
+    (0xFFFFFFFF).to_uint64()
+  let bad_addrs : Array[UInt64] = [base - 1, base + 4096, u64_max]
+  for addr in bad_addrs {
+    let r_read = Ok(g.memory_read(addr, 1)) catch { e => Err(e) }
+    assert_true(r_read is Err(@frida_gum_ffi.GumError::InvalidAddress(_)))
+    let r_write = Ok(g.memory_write(addr, b"\x00")) catch { e => Err(e) }
+    assert_true(
+      r_write is Err(@frida_gum_ffi.GumError::MemoryWriteFailed(_, _)),
+    )
+  }
+  // 长度越界：4097 > 4096；跨越末尾（base+4095 读 2 字节）
+  let r_long = Ok(g.memory_read(base, size + 1)) catch { e => Err(e) }
+  assert_true(r_long is Err(@frida_gum_ffi.GumError::InvalidAddress(_)))
+  let r_cross = Ok(g.memory_read(base + 4095, 2)) catch { e => Err(e) }
+  assert_true(r_cross is Err(@frida_gum_ffi.GumError::InvalidAddress(_)))
+  // 负长度 → MemoryReadFailed（缓冲容量非法，冻结口径）
+  let r_neg = Ok(g.memory_read(base, -1)) catch { e => Err(e) }
+  assert_true(r_neg is Err(@frida_gum_ffi.GumError::MemoryReadFailed(_, _)))
+  g.close()
+}
+
 ///|
 /// `Gum::pump_callbacks` 公开契约（E1 marshal 派发泵，见 README §2）：
 /// 空队列派发 = 0；`max_events <= 0` → `CallbackBridgeFailed`（不 panic）；

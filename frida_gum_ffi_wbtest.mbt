@@ -368,6 +368,149 @@ test "marshal 队列可观察值查询（W5）" {
 }
 
 ///|
+/// W6 小端写入辅助（构造确定性上下文记录，与 stub 头部契约同构）。
+fn w6_push_u32_le(a : Array[Byte], v : Int32) -> Unit {
+  for i in 0..<4 {
+    a.push(((v >> (i * 8)) & 0xFF).to_byte())
+  }
+}
+
+///|
+fn w6_push_u64_le(a : Array[Byte], v : UInt64) -> Unit {
+  for i in 0..<8 {
+    a.push(((v >> (i * 8)) & 0xFF).to_int().to_byte())
+  }
+}
+
+///|
+/// 构造 50 字节上下文记录：point / depth / tid / fn / argc=2 / args / has_ret / ret。
+fn w6_ctx_record(point : Int32, has_ret : Int32) -> Array[Byte] {
+  let a : Array[Byte] = []
+  a.push(point.to_byte())
+  w6_push_u32_le(a, 0) // depth
+  w6_push_u64_le(a, 7) // thread_id
+  w6_push_u64_le(a, 0x140000100) // fn_addr
+  w6_push_u32_le(a, 2) // argc
+  w6_push_u64_le(a, 1)
+  w6_push_u64_le(a, 2)
+  a.push(has_ret.to_byte())
+  w6_push_u64_le(a, 42)
+  a
+}
+
+///|
+/// W6 截断扫描：50 字节记录的全部真前缀（0..49）必须 None 且零 panic（含 has_ret=1
+/// 的返回值截断窗口，fail-closed 加固后）；完整记录正常解析；畸形 argc / point 容错口径钉住。
+test "上下文记录截断扫描与畸形字段（W6）" {
+  let full = w6_ctx_record(1, 1)
+  assert_eq(full.length(), 50)
+  let bytes = Bytes::from_array(full[:])
+  // 全前缀扫描：任何截断都不得 panic，一律 None
+  for n in 0..<50 {
+    let r = parse_context_record(Bytes::from_array(full[0:n]), n, 9)
+    assert_true(r is None)
+  }
+  // 完整记录：逐字段保真
+  match parse_context_record(bytes, 50, 9) {
+    Some(ctx) => {
+      assert_eq(ctx.hook_id, 9)
+      assert_true(ctx.point_cut is PointCut::Enter)
+      assert_eq(ctx.depth, 0)
+      assert_eq(ctx.thread_id, 7)
+      assert_eq(ctx.function_address, 0x140000100)
+      assert_eq(ctx.args.length(), 2)
+      assert_eq(ctx.args[0], 1)
+      assert_eq(ctx.args[1], 2)
+      match ctx.return_value {
+        Some(v) => assert_eq(v, 42)
+        None => abort("has_ret=1 应带返回值")
+      }
+    }
+    None => abort("完整 50 字节记录应解析成功")
+  }
+  // has_ret=0：42 字节即完整（need=26+16），无返回值；41 字节截断 → None
+  let no_ret = w6_ctx_record(2, 0)
+  match parse_context_record(Bytes::from_array(no_ret[0:42]), 42, 9) {
+    Some(ctx) => {
+      assert_true(ctx.point_cut is PointCut::Leave)
+      assert_true(ctx.return_value is None)
+    }
+    None => abort("has_ret=0 的 42 字节记录应解析成功")
+  }
+  assert_true(
+    parse_context_record(Bytes::from_array(no_ret[0:41]), 41, 9) is None,
+  )
+  // 畸形 argc：3（超上界）与 0xFFFFFFFF（负值）→ None
+  let bad_argc = w6_ctx_record(1, 0)
+  bad_argc[21] = (3).to_byte()
+  assert_true(
+    parse_context_record(Bytes::from_array(bad_argc[:]), 50, 9) is None,
+  )
+  for i in 21..<25 {
+    bad_argc[i] = (0xFF).to_byte()
+  }
+  assert_true(
+    parse_context_record(Bytes::from_array(bad_argc[:]), 50, 9) is None,
+  )
+  // point 容错冻结口径：非 1 一律归 Leave（0 / 3 / 255）
+  for p in [0, 3, 255] {
+    let rec = w6_ctx_record(p, 0)
+    match parse_context_record(Bytes::from_array(rec[:]), 50, 9) {
+      Some(ctx) => assert_true(ctx.point_cut is PointCut::Leave)
+      None => abort("point 容错口径：非 1 应归 Leave 而非拒绝")
+    }
+  }
+}
+
+///|
+/// W6 变形律 P1（init-close 重置律）：写入图案 → close → init 后内存回到初值 i&0xFF。
+test "init-close 重置律（W6 变形律 P1）" {
+  let base : UInt64 = 0x10000000
+  let g = Gum::init()
+  g.memory_write(base, b"\xde\xad\xbe\xef")
+  g.close()
+  let g2 = Gum::init()
+  let fresh = g2.memory_read(base, 4)
+  for i in 0..<4 {
+    assert_eq(fresh[i].to_int(), i & 0xFF)
+  }
+  g2.close()
+}
+
+///|
+/// W6 变形律 P3（FIFO 分批律）：混合 enter/leave 顺序入队，分批 pump 后
+/// 执行序列与入队序列逐项一致（派发不重排、不丢失、不重复）。
+test "FIFO 分批派发律（W6 变形律 P3）" {
+  let g = Gum::init()
+  let order : Array[String] = []
+  let hook_id = g.attach(
+    b"target_add",
+    fn(ctx) { order.push("e\{ctx.args[0]}") },
+    fn(ctx) { order.push("l\{ctx.args[0]}") },
+  )
+  // 入队序列：e0 l1 e2 l3 e4 l5（arg0 作序号标记）
+  let mut i = 0
+  while i < 6 {
+    let point = if i % 2 == 0 { 1 } else { 2 }
+    assert_eq(mb_gum_test_fire_marshal(hook_id, point, i.to_uint64(), 0, 0), 0)
+    i = i + 1
+  }
+  assert_eq(g.pump_callbacks(2), 2)
+  assert_eq(g.pump_callbacks(3), 3)
+  assert_eq(g.pump_callbacks(10), 1)
+  assert_eq(g.pump_callbacks(10), 0)
+  assert_eq(order.length(), 6)
+  assert_eq(order[0], "e0")
+  assert_eq(order[1], "l1")
+  assert_eq(order[2], "e2")
+  assert_eq(order[3], "l3")
+  assert_eq(order[4], "e4")
+  assert_eq(order[5], "l5")
+  g.detach(hook_id)
+  g.close()
+}
+
+///|
 /// E1 marshal 基础路径（见 README §2）：被钩线程只入队、
 /// owner 线程 pump 派发；闭包执行线程收敛到 owner 线程；上下文浅拷贝保真；
 /// pump 错误路径（max_events <= 0 → CallbackBridgeFailed）。

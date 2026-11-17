@@ -133,11 +133,17 @@ fn parse_region_record(b : Bytes) -> MemoryRegion {
 ///|
 /// 按 stub 记录格式解析调用上下文：
 /// point u8 / depth i32 / thread_id u64 / fn_addr u64 / argc i32 / args / has_ret u8 / ret u64。
+/// W6 fail-closed 加固（登记于 docs/CHANGELOG.md）：头部不足 25 字节、或 has_ret=1 但
+/// 返回值 8 字节被截断时返回 None（此前会越界 panic）；生产路径 stub 恒回传完整
+/// 50 字节记录，公开 API 行为不变。
 fn parse_context_record(
   b : Bytes,
   n : Int32,
   hook_id : HookId,
 ) -> InvocationContext? {
+  if n < 25 {
+    return None // argc 字段位于 [21..25)，头部不完整先拒绝
+  }
   let argc = parse_u32_le(b, 21)
   if argc < 0 || argc > 2 {
     return None
@@ -157,6 +163,9 @@ fn parse_context_record(
   }
   let ret_off = 25 + argc * 8
   let return_value = if b[ret_off].to_int() == 1 {
+    if n < ret_off + 9 {
+      return None // has_ret=1 但返回值被截断：fail-closed
+    }
     Some(parse_u64_le(b, ret_off + 1))
   } else {
     None
