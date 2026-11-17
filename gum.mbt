@@ -214,6 +214,38 @@ pub fn Gum::pump_callbacks(
 }
 
 ///|
+/// W5 marshal 队列可观察值（纯加法）：已入队未派发的事件条数。
+/// 线程：任意线程可调（C 侧持锁读）；运行时已关闭 → `NotInitialized`。
+pub fn Gum::pending_callbacks(_self : Gum) -> Int32 raise GumError {
+  let n = mb_gum_marshal_pending()
+  if n >= 0 {
+    return n
+  }
+  if n == -5 {
+    raise GumError::NotInitialized
+  }
+  raise GumError::CallbackBridgeFailed(
+    "marshal pending 查询失败（status=\{-n}）",
+  )
+}
+
+///|
+/// W5 marshal 队列可观察值（纯加法）：累计丢弃事件条数（队列满溢出 + detach/close 滞留丢弃）。
+/// 计数在 init 重置世界时清零；运行时已关闭 → `NotInitialized`。
+pub fn Gum::dropped_callbacks(_self : Gum) -> Int32 raise GumError {
+  let n = mb_gum_marshal_dropped()
+  if n >= 0 {
+    return n
+  }
+  if n == -5 {
+    raise GumError::NotInitialized
+  }
+  raise GumError::CallbackBridgeFailed(
+    "marshal dropped 查询失败（status=\{-n}）",
+  )
+}
+
+///|
 /// 摘除 hook 并释放回调闭包（listener 与 `#owned` 闭包成对释放）。
 /// **不会二次释放，重复调用返回明确错误**（重复 detach → `DetachFailed`；运行时已关闭 → `NotInitialized`）。
 pub fn Gum::detach(self : Gum, hook_id : HookId) -> Unit raise GumError {

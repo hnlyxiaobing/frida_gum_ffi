@@ -1,9 +1,10 @@
 ///|
 /// ---- 私有 shim 与解析辅助（不导出，pkg.generated.mbti 不含本节符号）----
 ///
-/// shim 可见性收敛决策（见 docs/DECISIONS.md）后，`frida_gum_ffi.mbt` 的 12 个 `mb_gum_*` 也已收敛为包私有，
-/// 与本节的私有 shim（`mb_gum_region_at` / `mb_gum_current_context` / `mb_gum_marshal_drain`）
-/// 及 `listener_glue.mbt` 的 4 个 `mb_gum_listener_glue_*` 合计 19 个 `mb_gum_*` C 声明，
+/// shim 可见性收敛决策（见 README §2）后，`frida_gum_ffi.mbt` 的 13 个 `mb_gum_*` 也已收敛为包私有，
+/// 与本节的私有 shim（`mb_gum_region_at` / `mb_gum_current_context` / `mb_gum_marshal_drain` /
+/// `mb_gum_marshal_pending` / `mb_gum_marshal_dropped`）
+/// 及 `listener_glue.mbt` 的 4 个 `mb_gum_listener_glue_*` 合计 22 个 `mb_gum_*` C 声明，
 /// **全部是私有实现 ABI，非公共 API**。
 /// 本节补齐两处数据源缺口：
 ///   1. `Gum::regions` 无数据源 shim → `mb_gum_region_at`；
@@ -35,6 +36,14 @@ extern "C" fn mb_gum_current_context(
 /// MoonBit 闭包（被钩线程绝不执行闭包）。返回 >= 0 = 派发条数，< 0 = 错误码取负
 /// （-5 未初始化，-6 参数非法）。必须在 owner 线程调用（见 `Gum::pump_callbacks`）。
 extern "C" fn mb_gum_marshal_drain(max_events : Int32) -> Int32 = "mb_gum_marshal_drain"
+
+///|
+/// W5 marshal 队列可观察值（生产 shim）：返回 >= 0 = 当前值，-5 = 未初始化。
+/// pending 持锁读队列深度；dropped 为累计丢弃计数（init 重置世界时清零）。
+extern "C" fn mb_gum_marshal_pending() -> Int32 = "mb_gum_marshal_pending"
+
+///|
+extern "C" fn mb_gum_marshal_dropped() -> Int32 = "mb_gum_marshal_dropped"
 
 ///|
 /// 上下文记录缓冲容量（记录为 50 字节，留出余量）。

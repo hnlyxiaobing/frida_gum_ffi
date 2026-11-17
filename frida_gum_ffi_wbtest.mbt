@@ -307,6 +307,67 @@ extern "C" fn mb_gum_listener_glue_on_leave(
 extern "C" fn mb_gum_listener_glue_destroy(listener : GumListenerRaw) -> Int32 = "mb_gum_listener_glue_destroy"
 
 ///|
+/// W5 marshal 队列可观察值公开查询：pending/dropped 与测试缝同值；
+/// 入队/派发/滞留丢弃/溢出丢弃全链路可观察；close 后两查询均 NotInitialized。
+test "marshal 队列可观察值查询（W5）" {
+  let g = Gum::init()
+  let fired : Array[String] = []
+  let hook_id = g.attach(b"target_add", fn(_ctx) { fired.push("e") }, fn(_ctx) {
+    fired.push("l")
+  })
+  assert_eq(g.pending_callbacks(), 0)
+  assert_eq(g.dropped_callbacks(), 0)
+  // 入队 3 条：只入队不执行，pending 可观察
+  assert_eq(mb_gum_test_fire_marshal(hook_id, 1, 1, 2, 0), 0)
+  assert_eq(mb_gum_test_fire_marshal(hook_id, 2, 3, 4, 7), 0)
+  assert_eq(mb_gum_test_fire_marshal(hook_id, 1, 5, 6, 0), 0)
+  assert_eq(g.pending_callbacks(), 3)
+  assert_eq(g.pending_callbacks(), mb_gum_test_marshal_pending())
+  assert_eq(fired.length(), 0)
+  // 分批派发：pending 递减
+  assert_eq(g.pump_callbacks(2), 2)
+  assert_eq(g.pending_callbacks(), 1)
+  assert_eq(g.pump_callbacks(10), 1)
+  assert_eq(g.pending_callbacks(), 0)
+  assert_eq(fired.length(), 3)
+  // 滞留丢弃：入队 2 条后 detach → pump 安全丢弃，dropped 可观察
+  assert_eq(mb_gum_test_fire_marshal(hook_id, 1, 1, 1, 0), 0)
+  assert_eq(mb_gum_test_fire_marshal(hook_id, 1, 2, 2, 0), 0)
+  g.detach(hook_id)
+  assert_eq(g.pump_callbacks(16), 0)
+  assert_eq(g.dropped_callbacks(), 2)
+  assert_eq(g.dropped_callbacks(), mb_gum_test_marshal_dropped())
+  assert_eq(fired.length(), 3) // 滞留事件绝不执行
+  // 溢出丢弃：300 条入队，容量 256，dropped 累计 = 2 + full
+  let hook2 = g.attach(b"target_concat", fn(_ctx) { () }, fn(_ctx) { () })
+  let mut ok = 0
+  let mut full = 0
+  let mut i = 0
+  while i < 300 {
+    let st = mb_gum_test_fire_marshal(hook2, 1, 0, 0, 0)
+    if st == 0 {
+      ok = ok + 1
+    } else {
+      full = full + 1
+    }
+    i = i + 1
+  }
+  assert_eq(ok + full, 300)
+  assert_true(full > 0)
+  assert_eq(g.pending_callbacks(), ok)
+  assert_eq(g.dropped_callbacks(), 2 + full)
+  assert_eq(g.pump_callbacks(1000), ok)
+  assert_eq(g.pending_callbacks(), 0)
+  g.detach(hook2)
+  g.close()
+  // close 后两查询均 NotInitialized
+  let r_pending = Ok(g.pending_callbacks()) catch { e => Err(e) }
+  assert_true(r_pending is Err(GumError::NotInitialized))
+  let r_dropped = Ok(g.dropped_callbacks()) catch { e => Err(e) }
+  assert_true(r_dropped is Err(GumError::NotInitialized))
+}
+
+///|
 /// E1 marshal 基础路径（见 README §2）：被钩线程只入队、
 /// owner 线程 pump 派发；闭包执行线程收敛到 owner 线程；上下文浅拷贝保真；
 /// pump 错误路径（max_events <= 0 → CallbackBridgeFailed）。

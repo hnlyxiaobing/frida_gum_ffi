@@ -33,11 +33,13 @@
  *   - MoonBit 闭包的执行线程由此被收敛到 owner 线程，GC/引用计数不跨线程。
  *
  * shim 清单：
- *   公开（docs/API.md 12 个）：mb_gum_init_embedded / mb_gum_deinit_embedded /
- *     mb_gum_interceptor_obtain / mb_gum_transaction / mb_gum_attach / mb_gum_detach /
+ *   生产（15 个基础 shim，见 README §3）：mb_gum_init_embedded / mb_gum_deinit_embedded /
+ *     mb_gum_interceptor_obtain / mb_gum_transaction / mb_gum_attach / mb_gum_attach_address /
+ *     mb_gum_detach /
  *     mb_gum_set_callbacks / mb_gum_memory_read / mb_gum_memory_write /
- *     mb_gum_enumerate_modules / mb_gum_module_at / mb_gum_modules_free
- *   私有（docs/API.md 缺口补齐，不导出）：mb_gum_region_at（Gum::regions 数据源）、
+ *     mb_gum_enumerate_modules / mb_gum_module_at / mb_gum_modules_free /
+ *     mb_gum_marshal_pending / mb_gum_marshal_dropped
+ *   私有（数据源缺口补齐，不导出）：mb_gum_region_at（Gum::regions 数据源）、
  *     mb_gum_current_context（回调上下文回传通道）、
  *     mb_gum_marshal_drain（owner 线程派发泵，Gum::pump_callbacks 的 C 侧）、
  *     mb_gum_listener_glue_*（GumInvocationListener vtable 胶水接口预留，见下）
@@ -713,9 +715,9 @@ void mb_gum_modules_free(void *modules) {
   }
 }
 
-/* ===================== 私有 shim（docs/API.md 缺口补齐，不导出） ===================== */
+/* ===================== 私有 shim（数据源缺口补齐，不导出） ===================== */
 
-/* Gum::regions 的数据源：docs/API.md 的 12 个公开 shim 未覆盖内存区间枚举。 */
+/* Gum::regions 的数据源：15 个基础生产 shim 未覆盖内存区间枚举。 */
 MOONBIT_FFI_EXPORT
 int32_t mb_gum_region_at(int32_t index, uint8_t *dst, int32_t capacity) {
   const struct mb_region *r;
@@ -847,6 +849,28 @@ static void mb_fill_record(
   r->args[1] = arg1;
   r->has_ret = (point == MB_POINT_LEAVE) ? 1 : 0;
   r->ret = ret;
+}
+
+/* W5 marshal 队列可观察值查询（生产 shim，纯加法）：返回 >= 0 = 当前值；-5 = 未初始化。
+ * pending 持锁读队列深度；dropped 为累计计数（溢出丢弃 + 滞留丢弃，init 重置世界时清零）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_marshal_pending(void) {
+  int32_t n;
+  if (mb_state != MB_ST_ACTIVE) {
+    return -MB_ERR_NOT_INITIALIZED;
+  }
+  MB_MARSHAL_LOCK();
+  n = mb_marshal_count;
+  MB_MARSHAL_UNLOCK();
+  return n;
+}
+
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_marshal_dropped(void) {
+  if (mb_state != MB_ST_ACTIVE) {
+    return -MB_ERR_NOT_INITIALIZED;
+  }
+  return mb_marshal_dropped;
 }
 
 /* owner 线程派发泵（Gum::pump_callbacks 的 C 侧）：出队并**只在调用本函数的线程**执行
