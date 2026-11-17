@@ -31,6 +31,45 @@ extern "C" fn mb_gum_test_live_closures() -> Int32 = "mb_gum_test_live_closures"
 extern "C" fn mb_gum_test_closure_rc(hook_id : UInt64) -> Int32 = "mb_gum_test_closure_rc"
 
 ///|
+/// W2 错误簿记测试缝：一次性强制 status（下一次 transaction / 枚举调用消费后自动清零，deinit 亦清零）。
+extern "C" fn mb_gum_test_force_init_status(code : Int32) -> Int32 = "mb_gum_test_force_init_status"
+
+///|
+extern "C" fn mb_gum_test_force_enum_status(code : Int32) -> Int32 = "mb_gum_test_force_enum_status"
+
+///|
+/// W2 错误变体触发补齐：DevkitNotFound / ModuleEnumerateFailed 显式用例
+/// （此前零用例的三变体之二；MemoryWriteFailed 见黑盒不对称双断言）。
+/// 一次性缝消费后不泄漏：后续 init / 枚举恢复正常；失败的 init 不消耗生命周期。
+test "错误变体触发补齐（W2：DevkitNotFound / ModuleEnumerateFailed）" {
+  // DevkitNotFound：强制 init 探针事务 status=8（公开 API 几乎不可达，经测试缝触发）
+  assert_eq(mb_gum_test_force_init_status(8), 0)
+  let r_init = Ok(Gum::init()) catch { e => Err(e) }
+  match r_init {
+    Err(GumError::DevkitNotFound(msg)) => {
+      assert_true(msg.length() > 0)
+      assert_true(msg.iter().any(fn(c) { c == '8' })) // 消息含 status 数字
+    }
+    _ => abort("强制 init status=8 应返回 DevkitNotFound")
+  }
+  // 一次性消费 + 失败 init 不消耗生命周期：正常 init 不受影响
+  let g = Gum::init()
+  // ModuleEnumerateFailed：modules 路径
+  assert_eq(mb_gum_test_force_enum_status(8), 0)
+  let r_mods = Ok(g.modules()) catch { e => Err(e) }
+  assert_true(r_mods is Err(GumError::ModuleEnumerateFailed(8)))
+  // ModuleEnumerateFailed：regions 路径（复用同一变体是既有口径，钉住）
+  assert_eq(mb_gum_test_force_enum_status(8), 0)
+  let r_regs = Ok(g.regions()) catch { e => Err(e) }
+  assert_true(r_regs is Err(GumError::ModuleEnumerateFailed(8)))
+  // 一次性消费后枚举恢复（世界自洽：2 模块 / 4 区间）
+  assert_eq(g.modules().length(), 2)
+  assert_eq(g.regions().length(), 4)
+  g.close()
+}
+
+///|
+///|
 /// 许可门禁可观察路径（见 README §2「LicenseReviewRequired」）：门禁未过时 `Gum::init` 主动返回
 /// `LicenseReviewRequired` / `PtraceDenied` 而非静默继续；失败的 init 不消耗生命周期。
 test "许可门禁可观察路径" {

@@ -111,6 +111,29 @@ test "gum 公开 API 全链路（桌面 stub）" {
 }
 
 ///|
+/// W2 错误簿记：memory_write 失败映射冻结口径（不对称双断言，见 README §2）。
+/// 非法地址写 → MemoryWriteFailed(addr, len)；同地址读 → InvalidAddress(addr)。
+test "memory_write 失败映射冻结口径（W2 不对称双断言）" {
+  let g = @frida_gum_ffi.Gum::init()
+  let bad : UInt64 = 0x99999999
+  let r_write = Ok(g.memory_write(bad, b"\x00")) catch { e => Err(e) }
+  match r_write {
+    Err(@frida_gum_ffi.GumError::MemoryWriteFailed(addr, len)) => {
+      assert_eq(addr, bad)
+      assert_eq(len, 1)
+    }
+    _ => abort("memory_write(非法地址) 应返回 MemoryWriteFailed")
+  }
+  let r_read = Ok(g.memory_read(bad, 1)) catch { e => Err(e) }
+  match r_read {
+    Err(@frida_gum_ffi.GumError::InvalidAddress(addr)) => assert_eq(addr, bad)
+    _ => abort("memory_read(同非法地址) 应返回 InvalidAddress")
+  }
+  g.close()
+}
+
+///|
+///|
 /// `Gum::pump_callbacks` 公开契约（E1 marshal 派发泵，见 README §2）：
 /// 空队列派发 = 0；`max_events <= 0` → `CallbackBridgeFailed`（不 panic）；
 /// 关闭后派发 → `NotInitialized`。

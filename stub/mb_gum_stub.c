@@ -41,11 +41,13 @@
  *     mb_gum_current_context（回调上下文回传通道）、
  *     mb_gum_marshal_drain（owner 线程派发泵，Gum::pump_callbacks 的 C 侧）、
  *     mb_gum_listener_glue_*（GumInvocationListener vtable 胶水接口预留，见下）
- *   测试缝（仅供 _wbtest）：mb_gum_test_fire / mb_gum_test_set_gate /
+ *   测试缝（仅供 _wbtest，14 个）：mb_gum_test_fire / mb_gum_test_set_gate /
  *     mb_gum_test_live_hooks / mb_gum_test_live_closures / mb_gum_test_closure_rc /
  *     mb_gum_test_fire_marshal / mb_gum_test_spawn_firers /
  *     mb_gum_test_marshal_pending / mb_gum_test_marshal_dropped /
- *     mb_gum_test_current_thread_id
+ *     mb_gum_test_current_thread_id / mb_gum_test_live_glues /
+ *     mb_gum_test_glue_closure_rc / mb_gum_test_force_init_status /
+ *     mb_gum_test_force_enum_status
  *
  * GumInvocationListener vtable 胶水（接口预留，G1→G2 解禁后对接真实 GObject 胶水）：
  *   真实胶水将以 GObject 三函数（class_init/instance_init + on_enter/on_leave）实现，
@@ -176,6 +178,11 @@ static int32_t mb_last_init_reason = 0;
 
 static int32_t mb_txn_open = 0;
 static int32_t mb_txn_error = 0;
+
+/* W2 错误簿记测试缝：一次性强制 status（下一次 transaction / 枚举调用消费后自动清零，
+ * deinit 亦清零防跨用例泄漏）；仅用于触发公开 API 几乎不可达的错误变体。 */
+static int32_t mb_force_init_status = 0;
+static int32_t mb_force_enum_status = 0;
 
 static int mb_runtime_token = 0;
 static int mb_interceptor_token = 0;
@@ -420,6 +427,8 @@ void mb_gum_deinit_embedded(void *runtime) {
   mb_txn_open = 0;
   mb_txn_error = 0;
   mb_modules_live = 0;
+  mb_force_init_status = 0;
+  mb_force_enum_status = 0;
 }
 
 MOONBIT_FFI_EXPORT
@@ -435,6 +444,11 @@ void *mb_gum_interceptor_obtain(void *runtime) {
 
 MOONBIT_FFI_EXPORT
 int32_t mb_gum_transaction(void *interceptor, int32_t begin) {
+  if (mb_force_init_status != 0) {
+    int32_t forced = mb_force_init_status;
+    mb_force_init_status = 0; /* 一次性：init 探针消费后不影响后续事务 */
+    return forced;
+  }
   if (interceptor == NULL) {
     /* init 探针：回传运行时不可用的原因（许可门禁 / ptrace / 重复 init） */
     return mb_last_init_reason != 0 ? mb_last_init_reason : MB_ERR_NOT_INITIALIZED;
@@ -599,6 +613,11 @@ int32_t mb_gum_module_at(void *modules, int32_t index, uint8_t *dst, int32_t cap
   const struct mb_module *m;
   uint32_t name_len, path_len, need;
   uint8_t *p;
+  if (mb_force_enum_status != 0) {
+    int32_t forced = mb_force_enum_status;
+    mb_force_enum_status = 0;
+    return forced;
+  }
   if (!mb_buf_ok(dst, capacity)) {
     return MB_ERR_BUFFER;
   }
@@ -648,6 +667,11 @@ int32_t mb_gum_region_at(int32_t index, uint8_t *dst, int32_t capacity) {
   const struct mb_region *r;
   uint32_t path_len, need;
   uint8_t *p;
+  if (mb_force_enum_status != 0) {
+    int32_t forced = mb_force_enum_status;
+    mb_force_enum_status = 0;
+    return forced;
+  }
   if (!mb_buf_ok(dst, capacity)) {
     return MB_ERR_BUFFER;
   }
@@ -990,6 +1014,20 @@ int32_t mb_gum_test_set_gate(int32_t gate, int32_t enabled) {
     return MB_GUM_OK;
   }
   return MB_ERR_BUFFER;
+}
+
+/* W2 错误簿记：强制下一次 init 探针事务返回指定 status（如 8 → DevkitNotFound）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_force_init_status(int32_t code) {
+  mb_force_init_status = code;
+  return MB_GUM_OK;
+}
+
+/* W2 错误簿记：强制下一次 module_at / region_at 返回指定 status（如 8 → ModuleEnumerateFailed）。 */
+MOONBIT_FFI_EXPORT
+int32_t mb_gum_test_force_enum_status(int32_t code) {
+  mb_force_enum_status = code;
+  return MB_GUM_OK;
 }
 
 MOONBIT_FFI_EXPORT
